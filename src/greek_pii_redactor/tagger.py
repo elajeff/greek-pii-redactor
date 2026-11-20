@@ -20,6 +20,9 @@ MAX_LENGTH = 128
 # A longer text is cut into windows that share this many tokens, so a name cut at the edge of one
 # window is whole in the next. Truncating instead would silently drop the names after the cut.
 WINDOW_OVERLAP = 32
+# A long text has many windows; running them all at once ran out of 12 GB on a 1 MB text.
+# 64 windows of 128 tokens add about 0.3 GB to the model's 1.1 GB.
+WINDOW_BATCH_SIZE = 64
 
 
 def decode_spans(offsets: list[tuple[int, int]], labels: list[int]) -> list[Span]:
@@ -59,8 +62,13 @@ def tag_texts(
     )
     offsets = encoded.pop("offset_mapping").tolist()
     owners = encoded.pop("overflow_to_sample_mapping").tolist()
+    encoded = encoded.to(model.device)
+    labels: list[list[int]] = []
     with torch.no_grad():
-        labels = model(**encoded.to(model.device)).logits.argmax(dim=-1).tolist()
+        for first in range(0, len(owners), WINDOW_BATCH_SIZE):
+            window_slice = slice(first, first + WINDOW_BATCH_SIZE)
+            batch = {name: tensor[window_slice] for name, tensor in encoded.items()}
+            labels += model(**batch).logits.argmax(dim=-1).tolist()
 
     found: list[list[Span]] = [[] for _ in texts]
     for owner, window_offsets, window_labels in zip(owners, offsets, labels, strict=True):

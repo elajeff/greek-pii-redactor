@@ -52,7 +52,7 @@ def ask_model(url: str, model: str, seed: int, message: str) -> str:
     )
     try:
         with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            return json.load(response)["message"]["content"]
+            raw_reply = response.read()
     except urllib.error.HTTPError as error:
         detail = error.read().decode()
         # Ollama answers 404 for an unknown URL too, so the body has to name the model.
@@ -65,6 +65,16 @@ def ask_model(url: str, model: str, seed: int, message: str) -> str:
         ) from error
     except OSError as error:
         raise SystemExit(f"Cannot reach Ollama at {url}: {error}") from error
+
+    unexpected = f"Ollama at {url} sent an unexpected reply"
+    try:
+        content = json.loads(raw_reply)["message"]["content"]
+    except (ValueError, KeyError, TypeError) as error:
+        # Not repr(error): for a body that isn't UTF-8 it holds the whole body.
+        raise SystemExit(f"{unexpected} ({type(error).__name__}: {error})") from error
+    if not isinstance(content, str):
+        raise SystemExit(f"{unexpected} (content is not a string)")
+    return content
 
 
 def main() -> None:
