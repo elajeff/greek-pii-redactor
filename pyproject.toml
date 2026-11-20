@@ -9,6 +9,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest==9.2.0", "ruff==0.17.6"]
+eval = ["Faker==40.54.0", "pyarrow==26.0.1"]
 
 [build-system]
 requires = ["setuptools>=77"]
@@ -19,6 +20,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
