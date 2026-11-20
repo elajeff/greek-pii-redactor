@@ -133,8 +133,8 @@ def test_id_wins_over_overlapping_name_span() -> None:
                 ("Ευχαριστώ τον [PERSON_1].", "Ευχαριστώ τον Νίκο Παπαδόπουλο."),
                 ("Ο [PERSON_1] απάντησε.", "Ο Νίκος Παπαδόπουλος απάντησε."),
                 ("ο [PERSON_1] απάντησε.", "ο Νίκος Παπαδόπουλος απάντησε."),
-                # The input has no genitive, so the first form seen is used.
-                ("Το βιβλίο του [PERSON_1].", "Το βιβλίο του Νίκος Παπαδόπουλος."),
+                # The input has no genitive, so it is derived from the nominative.
+                ("Το βιβλίο του [PERSON_1].", "Το βιβλίο του Νίκου Παπαδοπούλου."),
             ]
         ],
         *[
@@ -152,6 +152,54 @@ def test_restore_picks_the_form_that_fits_the_article(
     text: str, names: tuple[str, ...], reply: str, expected: str
 ) -> None:
     _, placeholders = redact(text, find_names(*names))
+    assert restore(reply, placeholders) == expected
+
+
+@pytest.mark.parametrize(
+    "reply, expected",
+    [
+        (
+            "Το βιβλίο του [PERSON_1] και της [PERSON_2].",
+            "Το βιβλίο του Νίκου Παπαδοπούλου και της Μαρίας Γεωργίου.",
+        ),
+        (
+            "Είδα τον [PERSON_1] και την [PERSON_2].",
+            "Είδα τον Νίκο Παπαδόπουλο και την Μαρία Γεωργίου.",
+        ),
+        ("Καλημέρα, [PERSON_1].", "Καλημέρα, Νίκο Παπαδόπουλε."),
+        ("Καλησπέρα σας [PERSON_1].", "Καλησπέρα σας Νίκο Παπαδόπουλε."),
+    ],
+)
+def test_restore_derives_the_case_the_reply_needs(reply: str, expected: str) -> None:
+    text = "Ο Νίκος Παπαδόπουλος ήρθε με τη Μαρία Γεωργίου."
+    _, placeholders = redact(text, find_names("Νίκος Παπαδόπουλος", "Μαρία Γεωργίου"))
+    assert restore(reply, placeholders) == expected
+
+
+@pytest.mark.parametrize(
+    "text, name, reply, expected",
+    [
+        (
+            "Ο κύριος Παπαδόπουλος ήρθε.",
+            "Παπαδόπουλος",
+            "Αγαπητέ κύριε [PERSON_1],",
+            "Αγαπητέ κύριε Παπαδόπουλε,",
+        ),
+        # A title in the reply does not make a first name a surname.
+        ("Ο Γεώργιος ήρθε.", "Γεώργιος", "Του κυρίου [PERSON_1].", "Του κυρίου Γεωργίου."),
+        # The title in the input makes the name a surname, even when the reply has no title.
+        (
+            "Ο κύριος Μπούσιος ήρθε.",
+            "Μπούσιος",
+            "Το βιβλίο του [PERSON_1].",
+            "Το βιβλίο του Μπούσιου.",
+        ),
+    ],
+)
+def test_restore_treats_a_lone_name_after_a_title_as_a_surname(
+    text: str, name: str, reply: str, expected: str
+) -> None:
+    _, placeholders = redact(text, find_names(name))
     assert restore(reply, placeholders) == expected
 
 

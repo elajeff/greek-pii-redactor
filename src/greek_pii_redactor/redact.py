@@ -1,14 +1,33 @@
 """Replaces personal data with placeholders like [PERSON_1] and puts it back in an LLM's reply.
 
-Limit: restore can only use the name forms seen in the input. If the reply needs a case that the
-input never had (a genitive after "του" when the input only had the nominative), it gets the first
-form seen, so the Greek may be ungrammatical.
+Limit: restore builds the case a reply needs from the forms seen in the input and the rules in
+inflect.py, so the Greek can still be wrong where the rules cannot tell: a seen genitive in -ου
+gives the nominative only for a 2-syllable first name (Νίκου), -ίου (Γεωργίου), -αίου (Ματθαίου)
+and -πούλου, so Κωνσταντίνου, Αλεξάνδρου and surnames in -ου are not derived from it; the folk first
+names Σπήλιος and Στέλλιος (read as learned), a lone female name in -η, -ή or -ά (left as it is),
+and surname-first order (Παπαδοπούλου Μαρία). Latin-script names have no rules, so they use the
+seen forms; Greek-script foreign names are inflected like Greek ones (Τόμας Μίλερ gives Τόμα
+Μίλερ). When nothing can be derived, restore uses the first form seen.
+
+Limit: a first name of 4+ syllables in paroxytone -ος gets the vocative -ε (Κωνσταντίνε); for some
+(Λεονάρδο/Λεονάρδε, Βενιζέλο/Βενιζέλε) both are in use and -ε is chosen. When the genitive moves
+the accent onto ι or υ after a vowel, the diaeresis is lost: Βάιος gives Βαίου (Βαΐου is right).
 
 Limit: two forms of one person with no article before them (a bare nominative and a bare genitive)
 cannot be told apart in the reply, so restore(redacted text) may not give the input back exactly.
 
-Limit: an article that is not in ARTICLE_CASES, or words between the article and the placeholder
-(του κ. [PERSON_1]), make restore use the first form seen.
+Limit: a word before the placeholder that is not an article, title or greeting (a number counts:
+«Ήρθαν 3 Νίκος Παπαδόπουλος.» stores the article "3" and gives no nominative), or words between
+them (του κ. [PERSON_1]), make restore use the first form seen.
+
+Limit: a name seen after punctuation with no greeting (often a vocative: «Ευχαριστώ, Νίκο
+Παπαδόπουλε») counts as a nominative and wins over a seen genitive: with «Το σπίτι του Νίκου
+Παπαδοπούλου.» also seen, «Ο [PERSON_1]» restores as «Ο Νίκο Παπαδόπουλε». After a greeting
+(«Καλημέρα, Νίκο») the case is read as a vocative.
+
+Limit: names written without accents or in capitals are not inflected right: «Ο Νικος» seen,
+«Καλημέρα, [PERSON_1]» restores as «Καλημέρα, Νικε» (Νικο is right), and «Ο ΝΙΚΟΣ» seen gives
+«ΝΙΚΟΣ» in every case.
 
 Limit: a man and a woman can still merge when the tokens are identical (Κώστα), and surnames
 spelled differently (Παπαδόπουλος, Παπαδόπουλλος) are separate people. The rare genitive
@@ -19,6 +38,7 @@ import re
 import unicodedata
 from collections.abc import Callable
 
+from greek_pii_redactor.inflect import gender_of, inflect_name, nominative
 from greek_pii_redactor.rules import Span, find_ids
 
 KINDS = ("PERSON", "AFM", "AMKA", "IBAN", "PHONE", "EMAIL")
@@ -32,6 +52,7 @@ ENDING_GROUPS = [
     {"οσ", "ου", "ο", "ε"},
     {"ησ", "η"},
     {"ασ", "α"},
+    {"ωσ", "ω"},
 ]
 ENDINGS_LONGEST_FIRST = sorted(set().union(*ENDING_GROUPS), key=len, reverse=True)
 
@@ -53,6 +74,45 @@ ARTICLE_CASES = {
     "των": "genitive",
     "ενός": "genitive",
 }
+
+ARTICLE_GENDERS = {
+    "ο": "M",
+    "ένας": "M",
+    "τον": "M",
+    "στον": "M",
+    "του": "M",
+    "ενός": "M",
+    "η": "F",
+    "την": "F",
+    "τη": "F",
+    "στην": "F",
+    "στη": "F",
+    "της": "F",
+}
+# Title -> (case, gender). κυρία is also the accusative and vocative; a woman's name is the same
+# in all three.
+TITLES = {
+    "κύριος": ("nominative", "M"),
+    "κυρία": ("nominative", "F"),
+    "κυρίου": ("genitive", "M"),
+    "κυρίας": ("genitive", "F"),
+    "κύριο": ("accusative", "M"),
+    "κύριε": ("vocative", "M"),
+}
+# Greeting -> gender, None when the word has none. A name after one is a vocative.
+GREETINGS = {
+    "αγαπητέ": "M",
+    "αγαπητή": "F",
+    "καλημέρα": None,
+    "καλησπέρα": None,
+    "καλημέρα σας": None,
+    "καλησπέρα σας": None,
+    "γεια σου": None,
+    "γεια σας": None,
+}
+# A greeting may be followed by a comma before the name: "Καλημέρα, [PERSON_1]".
+GREETING_WORDS = "|".join(greeting.replace(" ", r"\s+") for greeting in GREETINGS)
+WORD_BEFORE = re.compile(rf"\b({GREETING_WORDS}),?\s+$|(\w+)\s+$", re.IGNORECASE)
 
 # Placeholder -> the forms seen in the input, each as {"text": ...}. A PERSON form also has
 # "article", the lowercase word before it. Plain dicts and lists, so json.dumps works.
@@ -106,8 +166,19 @@ def same_value(kind: str, first: str, second: str) -> bool:
 
 
 def word_before(text: str, position: int) -> str:
-    match = re.search(r"(\w+)\s+$", text[:position])
-    return match.group(1).lower() if match else ""
+    match = WORD_BEFORE.search(text[:position])
+    return " ".join((match.group(1) or match.group(2)).lower().split()) if match else ""
+
+
+def read_context(word: str) -> tuple[str, str | None, bool] | None:
+    """(case, gender, is a title) that the word before a name asks for."""
+    if word in ARTICLE_CASES:
+        return ARTICLE_CASES[word], ARTICLE_GENDERS.get(word), False
+    if word in TITLES:
+        return *TITLES[word], True
+    if word in GREETINGS:
+        return "vocative", GREETINGS[word], False
+    return None
 
 
 def redact(
@@ -164,12 +235,42 @@ def redact(
     return "".join(pieces), placeholders
 
 
-def pick_form(forms: list[dict[str, str]], article: str) -> dict[str, str]:
-    case = ARTICLE_CASES.get(article)
+def derive_form(forms: list[dict[str, str]], case: str, reply_gender: str | None) -> str | None:
+    contexts = [read_context(form["article"]) for form in forms]
+    gender = next((context[1] for context in contexts if context and context[1]), reply_gender)
+    nominative_name = None
+    for form, context in zip(forms, contexts, strict=True):
+        # No word right before the name (start of the text, or any punctuation) is taken as a
+        # nominative.
+        if form["article"] == "" or (context and context[0] == "nominative"):
+            nominative_name = form["text"]
+            break
+    if nominative_name is None and gender:
+        for form, context in zip(forms, contexts, strict=True):
+            lone_surname = bool(context and context[2]) and len(form["text"].split()) == 1
+            if context and (found := nominative(form["text"], gender, context[0], lone_surname)):
+                nominative_name = found
+                break
+    gender = gender or (nominative_name and gender_of(nominative_name))
+    if nominative_name and gender:
+        # A single token is a surname only if the input had it after a title; a title in the
+        # reply sets the case and gender, not the kind of name.
+        after_title = any(context and context[2] for context in contexts)
+        lone_surname = after_title and len(nominative_name.split()) == 1
+        return inflect_name(nominative_name, gender, case, lone_surname)
+    return None
+
+
+def pick_form(forms: list[dict[str, str]], word: str) -> str:
+    context = read_context(word)
+    if context is None:
+        return forms[0]["text"]
+    case, gender, _ = context
     for form in forms:
-        if case and ARTICLE_CASES.get(form["article"]) == case:
-            return form
-    return forms[0]
+        seen = read_context(form["article"])
+        if seen and seen[0] == case:
+            return form["text"]
+    return derive_form(forms, case, gender) or forms[0]["text"]
 
 
 def restore(reply: str, placeholders: Placeholders) -> str:
@@ -179,7 +280,7 @@ def restore(reply: str, placeholders: Placeholders) -> str:
             # Brackets off, so the next turn of a chat does not trip redact's placeholder check.
             return match.group()[1:-1]
         if match.group(1) == "PERSON":
-            return pick_form(forms, word_before(reply, match.start()))["text"]
+            return pick_form(forms, word_before(reply, match.start()))
         return forms[0]["text"]
 
     return PLACEHOLDER_PATTERN.sub(original, reply)
