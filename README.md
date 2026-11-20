@@ -14,7 +14,20 @@ Removes personal data from Greek and English text before it goes to an LLM, and 
 
 ΑΦΜ, ΑΜΚΑ and IBAN are only reported when their check digit is right, so a mistyped number is left alone. Phone numbers have no check digit, so any 10-digit number with the right start (69 or 2, optional +30 or 0030) counts.
 
-`load_tagger` in `greek_pii_redactor.tagger` loads a fine-tuned XLM-R model that finds person names (see Name tagger below). Addresses, the placeholder and restore step and the proxy aren't built yet.
+`load_tagger` in `greek_pii_redactor.tagger` loads a fine-tuned XLM-R model that finds person names (see Name tagger below).
+
+`redact` swaps what it finds for placeholders and `restore` puts it back in the LLM's reply:
+
+```python
+>>> from greek_pii_redactor.redact import redact, restore
+>>> text, mapping = redact("ΑΦΜ 123456783, τηλ. 6912345678, giorgos@example.gr")
+>>> text
+'ΑΦΜ [AFM_1], τηλ. [PHONE_1], [EMAIL_1]'
+>>> restore("Έλαβα: " + text, mapping)
+'Έλαβα: ΑΦΜ 123456783, τηλ. 6912345678, giorgos@example.gr'
+```
+
+Pass `redact` a name detector (for example the tagger) as its second argument to replace names too. The same person in different Greek cases gets one placeholder (`[PERSON_1]` for Νίκος and Νίκου). On restore, the form is chosen by the article before the placeholder, from the forms seen in the input. If the reply needs a case the input never had, restore uses the first form seen, so the Greek can be wrong. The limits are listed at the top of `redact.py`. Addresses and the proxy aren't built yet.
 
 ## Test data
 
@@ -60,6 +73,17 @@ The weights stay outside the repo. Pass the folder to the eval to add the tagger
 ```
 
 `download_ner.py` drops WikiANN test sentences that also appear in its train or validation split. Many person names still appear in both, which is how WikiANN is built, so the WikiANN score is for names the model has partly seen.
+
+## Placeholder survival
+
+An LLM can rewrite a placeholder (drop the brackets, translate it) and then restore has nothing to match. `eval/survival.py` sends redacted test sentences to a local [Ollama](https://ollama.com) model, asks for a polite rewrite, and counts how many placeholders come back unchanged. Temperature is 0 and the seed is set, so a run repeats.
+
+```powershell
+ollama pull qwen3:4b-instruct
+.\.venv\Scripts\python.exe eval/survival.py --model-dir C:\Users\you\weights\xlmr-person
+```
+
+Without `--model-dir` only IDs are redacted. On one sentence template the 4B model then wrapped the whole reply in brackets and dropped the placeholder's own brackets, so the ID-only numbers and the with-names numbers are not comparable.
 
 ## Run from source
 
