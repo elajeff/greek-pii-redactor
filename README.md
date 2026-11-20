@@ -31,6 +31,17 @@ Names and addresses, the placeholder and restore step and the proxy aren't built
 | [unimelb-nlp/wikiann](https://huggingface.co/datasets/unimelb-nlp/wikiann) (`el`) | unknown; labels are machine-generated from Wikipedia |
 | [joelniklaus/greek_legal_ner](https://huggingface.co/datasets/joelniklaus/greek_legal_ner) | CC BY-NC-SA 4.0 |
 
+## Baselines
+
+`eval/evaluate.py` scores exact-match precision and recall per kind for the rules alone and for Presidio with the Greek spaCy model. It needs the data above and the model:
+
+```powershell
+.\.venv\Scripts\python.exe -m spacy download el_core_news_lg
+.\.venv\Scripts\python.exe eval/evaluate.py
+```
+
+`el_core_news_lg` is CC BY-NC-SA 3.0, so it is only used here for comparison and isn't part of the package.
+
 ## Run from source
 
 Python 3.13 (64-bit). From the repository root in PowerShell:
