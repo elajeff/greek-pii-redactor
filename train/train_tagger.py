@@ -3,7 +3,11 @@
 Base model: FacebookAI/xlm-roberta-base, MIT licence (stated on its Hugging Face model page).
 Training data: WikiANN el train and data/synthetic_train.jsonl. The synthetic ID spans (AFM, AMKA,
 IBAN, PHONE, EMAIL) stay label O: the rules find those. WikiANN el validation picks the epoch, by
-exact character-span F1. Needs a CUDA GPU.
+exact character-span F1, and stops training after PATIENCE epochs without a gain. Needs a CUDA GPU.
+
+--without-synthetic trains on WikiANN only, --train-fraction uses a seeded sample of the training
+records (for a learning curve) and --seed seeds Python's and torch's random generators. Each
+epoch's numbers go to epochs.json in --out.
 
 Setup: pip install -e ".[train]", then the data scripts named in eval/evaluate.py.
 Run (the weights directory must be outside the repo, nothing from it is committed):
@@ -38,17 +42,30 @@ from greek_pii_redactor.tagger import (
 )
 
 BASE_MODEL = "FacebookAI/xlm-roberta-base"
-SEED = 42
+DEFAULT_SEED = 42
 IGNORE = -100  # label id that the loss skips (special tokens)
 BATCH_SIZE = 32  # fits in 12 GB at this length with bf16
 LEARNING_RATE = 2e-5  # a common starting value for fine-tuning an encoder like this
-EPOCHS = 3  # the best epoch on validation is kept, so a later one can't make the weights worse
+# the linear schedule needs a fixed number of steps; patience can stop training before this
+MAX_EPOCHS = 15
+PATIENCE = 2  # epochs without a validation F1 gain over the best so far before training stops
 WARMUP_FRACTION = 0.1  # the first tenth of the steps ramp the rate up, then it decays linearly
 MAX_GRAD_NORM = 1.0  # clips rare exploding gradients
 EVAL_BATCH_SIZE = 64  # no gradients are stored, so a larger batch than in training is fine
 
-TRAIN_FILES = ("wikiann_el_train.jsonl", "synthetic_train.jsonl")
+WIKIANN_TRAIN_FILE = "wikiann_el_train.jsonl"
+SYNTHETIC_TRAIN_FILE = "synthetic_train.jsonl"
 VALIDATION_FILE = "wikiann_el_validation.jsonl"
+
+
+def fraction(text: str) -> float:
+    try:
+        share = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number") from None
+    if not 0 < share <= 1:
+        raise argparse.ArgumentTypeError(f"{text} is outside (0, 1]")
+    return share
 
 
 def load_records(path: Path) -> list[dict]:
@@ -151,17 +168,33 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, required=True, help="directory for the weights")
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument("--without-synthetic", action="store_true", help="train on WikiANN only")
+    parser.add_argument(
+        "--train-fraction",
+        type=fraction,
+        default=1.0,
+        help="share of the training records to use, in (0, 1]",
+    )
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
         raise SystemExit("No CUDA GPU found. Training on the CPU is not supported.")
-    random.seed(SEED)
-    torch.manual_seed(SEED)
-    torch.cuda.manual_seed_all(SEED)
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
 
+    train_files = [WIKIANN_TRAIN_FILE]
+    if not args.without_synthetic:
+        train_files.append(SYNTHETIC_TRAIN_FILE)
     train_records = [
-        record for name in TRAIN_FILES for record in load_records(args.data_dir / name)
+        record for name in train_files for record in load_records(args.data_dir / name)
     ]
+    if args.train_fraction < 1.0:
+        train_records = random.Random(args.seed).sample(
+            train_records, round(args.train_fraction * len(train_records))
+        )
+    print(f"{len(train_records)} training records")
     validation_records = load_records(args.data_dir / VALIDATION_FILE)
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
     train_encoded = tokenize(tokenizer, train_records)
@@ -175,13 +208,17 @@ def main() -> None:
         BASE_MODEL, num_labels=len(LABELS), id2label=dict(enumerate(LABELS))
     ).to("cuda")
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
-    total_steps = EPOCHS * math.ceil(len(examples) / BATCH_SIZE)
+    # Stopping early leaves the rate partly decayed, since the schedule runs to MAX_EPOCHS
+    total_steps = MAX_EPOCHS * math.ceil(len(examples) / BATCH_SIZE)
     scheduler = get_linear_schedule_with_warmup(
         optimizer, int(WARMUP_FRACTION * total_steps), total_steps
     )
 
+    args.out.mkdir(parents=True, exist_ok=True)
+    epoch_log = []
     best_f1 = -1.0
-    for epoch in range(1, EPOCHS + 1):
+    best_epoch = 0
+    for epoch in range(1, MAX_EPOCHS + 1):
         model.train()
         random.shuffle(examples)
         loss_sum = 0.0
@@ -207,9 +244,32 @@ def main() -> None:
         )
         if f1 > best_f1:
             best_f1 = f1
+            best_epoch = epoch
             model.save_pretrained(args.out)
             tokenizer.save_pretrained(args.out)
             print(f"saved epoch {epoch} to {args.out}")
+        epoch_log.append(
+            {
+                "epoch": epoch,
+                "train_loss": loss_sum / batches,
+                "precision": precision,
+                "recall": recall,
+                "f1": f1,
+            }
+        )
+        # written every epoch so a crash keeps the epochs that ran
+        summary = {
+            "seed": args.seed,
+            "without_synthetic": args.without_synthetic,
+            "train_fraction": args.train_fraction,
+            "train_records": len(train_records),
+            "best_epoch": best_epoch,
+            "epochs": epoch_log,
+        }
+        (args.out / "epochs.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        if epoch - best_epoch >= PATIENCE:
+            print(f"no gain in {PATIENCE} epochs, stopping")
+            break
 
 
 if __name__ == "__main__":

@@ -90,7 +90,7 @@ If the upstream can't be reached it answers 502 with only the error type. Reques
 
 ## Name tagger
 
-`train/train_tagger.py` fine-tunes `FacebookAI/xlm-roberta-base` (MIT) to tag person names. It trains on the WikiANN train split plus 2000 synthetic sentences and keeps the epoch with the best F1 on the WikiANN validation split. It needs a CUDA GPU. The default PyPI torch wheel on Windows is CPU-only, so install the CUDA build first:
+`train/train_tagger.py` fine-tunes `FacebookAI/xlm-roberta-base` (MIT) to tag person names. It trains on the WikiANN train split plus 2000 synthetic sentences and keeps the epoch with the best F1 on the WikiANN validation split, stopping after 2 epochs without a gain (15 at most). `--seed`, `--without-synthetic` and `--train-fraction` change the seed, drop the synthetic sentences and train on a seeded share of the records; each epoch's numbers go to `epochs.json` in the output folder. It needs a CUDA GPU. The default PyPI torch wheel on Windows is CPU-only, so install the CUDA build first:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cu132
@@ -98,6 +98,8 @@ If the upstream can't be reached it answers 502 with only the error type. Reques
 .\.venv\Scripts\python.exe eval/make_synthetic.py --seed 11 --split train --count 2000 --out data/synthetic_train.jsonl
 .\.venv\Scripts\python.exe train/train_tagger.py --out C:\Users\you\weights\xlmr-person
 ```
+
+For example, `.\.venv\Scripts\python.exe train/train_tagger.py --out C:\Users\you\weights\wikiann-only --without-synthetic --train-fraction 0.5 --seed 1` trains on half of WikiANN with seed 1.
 
 The weights stay outside the repo. Pass the folder to the eval to add the tagger to the table:
 
