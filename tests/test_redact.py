@@ -93,8 +93,10 @@ def test_forms_of_one_person_share_a_placeholder(names: tuple[str, ...], people:
     ],
 )
 def test_same_id_shares_a_placeholder(text: str, expected: str) -> None:
-    redacted, _ = redact(text)
+    redacted, placeholders = redact(text)
     assert redacted == expected
+    # Only a name's form depends on the word before it, so an ID is stored once per spelling.
+    assert all(form.keys() == {"text"} for forms in placeholders.values() for form in forms)
 
 
 def test_placeholders_are_shared_across_calls() -> None:

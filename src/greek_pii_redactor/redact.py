@@ -54,8 +54,8 @@ ARTICLE_CASES = {
     "ενός": "genitive",
 }
 
-# Placeholder -> the forms seen in the input, each as {"text": ..., "article": ...} where article
-# is the lowercase word before it. Plain dicts and lists, so json.dumps works.
+# Placeholder -> the forms seen in the input, each as {"text": ...}. A PERSON form also has
+# "article", the lowercase word before it. Plain dicts and lists, so json.dumps works.
 Placeholders = dict[str, list[dict[str, str]]]
 
 
@@ -153,7 +153,9 @@ def redact(
             number = sum(known.startswith(f"[{span.kind}_") for known in placeholders) + 1
             placeholder = f"[{span.kind}_{number}]"
             placeholders[placeholder] = []
-        form = {"text": surface, "article": word_before(text, span.start)}
+        form = {"text": surface}
+        if span.kind == "PERSON":
+            form["article"] = word_before(text, span.start)
         if form not in placeholders[placeholder]:
             placeholders[placeholder].append(form)
         pieces += [text[position : span.start], placeholder]

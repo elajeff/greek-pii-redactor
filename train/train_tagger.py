@@ -12,6 +12,7 @@ Run (the weights directory must be outside the repo, nothing from it is committe
 
 import argparse
 import json
+import math
 import random
 from pathlib import Path
 
@@ -19,6 +20,7 @@ import torch
 from transformers import (
     AutoModelForTokenClassification,
     AutoTokenizer,
+    BatchEncoding,
     PreTrainedModel,
     PreTrainedTokenizerFast,
     get_linear_schedule_with_warmup,
@@ -76,16 +78,18 @@ def label_tokens(offsets: list[tuple[int, int]], spans: set[Span]) -> list[int]:
     return labels
 
 
-def encode(
-    tokenizer: PreTrainedTokenizerFast, records: list[dict]
-) -> list[tuple[list[int], list[int]]]:
-    """(token ids, labels) per record, cut at MAX_LENGTH tokens."""
-    encoded = tokenizer(
+def tokenize(tokenizer: PreTrainedTokenizerFast, records: list[dict]) -> BatchEncoding:
+    """Token ids and character offsets per record, cut at MAX_LENGTH tokens."""
+    return tokenizer(
         [record["text"] for record in records],
         truncation=True,
         max_length=MAX_LENGTH,
         return_offsets_mapping=True,
     )
+
+
+def encode(records: list[dict], encoded: BatchEncoding) -> list[tuple[list[int], list[int]]]:
+    """(token ids, labels) per record."""
     return [
         (ids, label_tokens(offsets, person_spans(record)))
         for ids, offsets, record in zip(
@@ -94,16 +98,8 @@ def encode(
     ]
 
 
-def print_unreproducible_share(
-    name: str, tokenizer: PreTrainedTokenizerFast, records: list[dict]
-) -> None:
+def print_unreproducible_share(name: str, records: list[dict], encoded: BatchEncoding) -> None:
     """Gold spans that labelling tokens and decoding them does not give back exactly."""
-    encoded = tokenizer(
-        [record["text"] for record in records],
-        truncation=True,
-        max_length=MAX_LENGTH,
-        return_offsets_mapping=True,
-    )
     total = lost = cut = 0
     for record, offsets in zip(records, encoded["offset_mapping"], strict=True):
         gold = person_spans(record)
@@ -168,15 +164,18 @@ def main() -> None:
     ]
     validation_records = load_records(args.data_dir / VALIDATION_FILE)
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
-    print_unreproducible_share("train", tokenizer, train_records)
-    print_unreproducible_share("validation", tokenizer, validation_records)
+    train_encoded = tokenize(tokenizer, train_records)
+    print_unreproducible_share("train", train_records, train_encoded)
+    print_unreproducible_share(
+        "validation", validation_records, tokenize(tokenizer, validation_records)
+    )
 
-    examples = encode(tokenizer, train_records)
+    examples = encode(train_records, train_encoded)
     model = AutoModelForTokenClassification.from_pretrained(
         BASE_MODEL, num_labels=len(LABELS), id2label=dict(enumerate(LABELS))
     ).to("cuda")
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
-    total_steps = EPOCHS * -(-len(examples) // BATCH_SIZE)
+    total_steps = EPOCHS * math.ceil(len(examples) / BATCH_SIZE)
     scheduler = get_linear_schedule_with_warmup(
         optimizer, int(WARMUP_FRACTION * total_steps), total_steps
     )
