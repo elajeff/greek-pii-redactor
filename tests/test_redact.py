@@ -133,8 +133,8 @@ def test_id_wins_over_overlapping_name_span() -> None:
                 ("Ευχαριστώ τον [PERSON_1].", "Ευχαριστώ τον Νίκο Παπαδόπουλο."),
                 ("Ο [PERSON_1] απάντησε.", "Ο Νίκος Παπαδόπουλος απάντησε."),
                 ("ο [PERSON_1] απάντησε.", "ο Νίκος Παπαδόπουλος απάντησε."),
-                # The input has no genitive, so the first form seen is used.
-                ("Το βιβλίο του [PERSON_1].", "Το βιβλίο του Νίκος Παπαδόπουλος."),
+                # The input has no genitive, so it is derived from the nominative.
+                ("Το βιβλίο του [PERSON_1].", "Το βιβλίο του Νίκου Παπαδοπούλου."),
             ]
         ],
         *[
@@ -146,12 +146,122 @@ def test_id_wins_over_overlapping_name_span() -> None:
                 ("Το βιβλίο της [PERSON_1].", "Το βιβλίο της Ελένης."),
             ]
         ],
+        # A token without accents or in capitals gets its accent from a list of names, or tries each
+        # position if unlisted, and its output is written back the way it was seen. An unlisted -ος
+        # name takes the vocative -ο (Ζβορκο, not Ζβορκέ) unless a seen form with an accent decides.
+        *[
+            (text, (name,), reply, expected)
+            for text, name, reply, expected in [
+                (
+                    "Ο Νικος Παπαδοπουλος ήρθε.",
+                    "Νικος Παπαδοπουλος",
+                    "Καλημέρα, [PERSON_1].",
+                    "Καλημέρα, Νικο Παπαδοπουλε.",
+                ),
+                (
+                    "Ο Νικος Παπαδόπουλος ήρθε.",
+                    "Νικος Παπαδόπουλος",
+                    "Καλημέρα, [PERSON_1].",
+                    "Καλημέρα, Νικο Παπαδόπουλε.",
+                ),
+                (
+                    "Ο ΝΙΚΟΣ Παπαδοπουλος ήρθε.",
+                    "ΝΙΚΟΣ Παπαδοπουλος",
+                    "Το βιβλίο του [PERSON_1].",
+                    "Το βιβλίο του ΝΙΚΟΥ Παπαδοπουλου.",
+                ),
+                ("Ο ΚΑΡΑΪΣΚΟΣ ήρθε.", "ΚΑΡΑΪΣΚΟΣ", "Του [PERSON_1].", "Του ΚΑΡΑΪΣΚΟΥ."),
+                ("Ο ΚΑΡΑΙΣΚΟΣ ήρθε.", "ΚΑΡΑΙΣΚΟΣ", "Του [PERSON_1].", "Του ΚΑΡΑΙΣΚΟΥ."),
+                ("Ο ΗΛΙΑΣ ήρθε.", "ΗΛΙΑΣ", "Καλημέρα, [PERSON_1].", "Καλημέρα, ΗΛΙΑ."),
+                ("Ο νικος ήρθε.", "νικος", "Καλημέρα, [PERSON_1].", "Καλημέρα, νικο."),
+                ("Το βιβλίο του Γεωργιου.", "Γεωργιου", "Ο [PERSON_1] ήρθε.", "Ο Γεωργιος ήρθε."),
+                ("Ο Ζβορκος ήρθε.", "Ζβορκος", "Καλημέρα, [PERSON_1].", "Καλημέρα, Ζβορκο."),
+                ("Ο ΝΊΚΟΣ ήρθε.", "ΝΊΚΟΣ", "Του [PERSON_1].", "Του ΝΊΚΟΥ."),
+                ("Ο ΓΙΑΝΝΗΣ ΣΚΑΣ ήρθε.", "ΓΙΑΝΝΗΣ ΣΚΑΣ", "Του [PERSON_1].", "Του ΓΙΑΝΝΗ ΣΚΑ."),
+                ("Ο ΖΒΟΡΚΟΣ ήρθε.", "ΖΒΟΡΚΟΣ", "Του [PERSON_1].", "Του ΖΒΟΡΚΟΥ."),
+            ]
+        ],
+        # The -ο rule goes by the nominative, so it also works from a seen genitive.
+        (
+            "Το σπίτι του Ζβορκου.",
+            ("Ζβορκου",),
+            "Καλημέρα, [PERSON_1].",
+            "Καλημέρα, Ζβορκο.",
+        ),
+        # Each part of a hyphenated surname is looked up on its own: Κωστόπουλος is listed.
+        (
+            "Ο Νικος Παπαδοπουλος-Κωστοπουλος ήρθε.",
+            ("Νικος Παπαδοπουλος-Κωστοπουλος",),
+            "Καλημέρα, [PERSON_1].",
+            "Καλημέρα, Νικο Παπαδοπουλος-Κωστοπουλε.",
+        ),
+        # An unlisted name whose accent readings disagree is inflected as it was written.
+        ("Η Κλαρα ήρθε.", ("Κλαρα",), "Το βιβλίο της [PERSON_1].", "Το βιβλίο της Κλαρας."),
+        # The diaeresis of the name as seen stays, though the listed form (Χάιδω) has none.
+        ("Η ΧΑΪΔΩ ήρθε.", ("ΧΑΪΔΩ",), "Το βιβλίο της [PERSON_1].", "Το βιβλίο της ΧΑΪΔΩΣ."),
+        # A listed name whose accents disagree (Ίωνα or Ιωνά) stays as seen, not guessed.
+        ("Μίλησα με τον ΙΩΝΑ.", ("ΙΩΝΑ",), "Του [PERSON_1].", "Του ΙΩΝΑ."),
+        # A seen form with an accent decides before the -ο rule for unlisted names.
+        (
+            "Ο Ζβορκος ήρθε. Του Ζβόρκου.",
+            ("Ζβορκος", "Ζβόρκου"),
+            "Καλημέρα, [PERSON_1].",
+            "Καλημέρα, Ζβόρκο.",
+        ),
     ],
 )
 def test_restore_picks_the_form_that_fits_the_article(
     text: str, names: tuple[str, ...], reply: str, expected: str
 ) -> None:
     _, placeholders = redact(text, find_names(*names))
+    assert restore(reply, placeholders) == expected
+
+
+@pytest.mark.parametrize(
+    "reply, expected",
+    [
+        (
+            "Το βιβλίο του [PERSON_1] και της [PERSON_2].",
+            "Το βιβλίο του Νίκου Παπαδοπούλου και της Μαρίας Γεωργίου.",
+        ),
+        (
+            "Είδα τον [PERSON_1] και την [PERSON_2].",
+            "Είδα τον Νίκο Παπαδόπουλο και την Μαρία Γεωργίου.",
+        ),
+        ("Καλημέρα, [PERSON_1].", "Καλημέρα, Νίκο Παπαδόπουλε."),
+        ("Καλησπέρα σας [PERSON_1].", "Καλησπέρα σας Νίκο Παπαδόπουλε."),
+    ],
+)
+def test_restore_derives_the_case_the_reply_needs(reply: str, expected: str) -> None:
+    text = "Ο Νίκος Παπαδόπουλος ήρθε με τη Μαρία Γεωργίου."
+    _, placeholders = redact(text, find_names("Νίκος Παπαδόπουλος", "Μαρία Γεωργίου"))
+    assert restore(reply, placeholders) == expected
+
+
+@pytest.mark.parametrize(
+    "text, name, reply, expected",
+    [
+        (
+            "Ο κύριος Παπαδόπουλος ήρθε.",
+            "Παπαδόπουλος",
+            "Αγαπητέ κύριε [PERSON_1],",
+            "Αγαπητέ κύριε Παπαδόπουλε,",
+        ),
+        # A title in the reply does not make a first name a surname.
+        ("Ο Γεώργιος ήρθε.", "Γεώργιος", "Του κυρίου [PERSON_1].", "Του κυρίου Γεωργίου."),
+        # The title in the input makes the name a surname, even when the reply has no title.
+        (
+            "Ο κύριος Μπούσιος ήρθε.",
+            "Μπούσιος",
+            "Το βιβλίο του [PERSON_1].",
+            "Το βιβλίο του Μπούσιου.",
+        ),
+    ],
+)
+def test_restore_treats_a_lone_name_after_a_title_as_a_surname(
+    text: str, name: str, reply: str, expected: str
+) -> None:
+    _, placeholders = redact(text, find_names(name))
     assert restore(reply, placeholders) == expected
 
 

@@ -20,13 +20,20 @@ import argparse
 import json
 import random
 import re
-import unicodedata
 from dataclasses import dataclass
 from datetime import date
 from functools import cache
 from pathlib import Path
 
 from faker.providers.person import el_GR, en_US
+
+from greek_pii_redactor.inflect import (
+    EXCLUDED_NAMES,
+    FEMALE_FIRST_ENDINGS,
+    MALE_ENDINGS,
+    inflect_name,
+    strip_accents,
+)
 
 SPLIT_PARITY = {"train": 0, "test": 1}
 GREEK_SHARE = 0.75  # the tool targets Greek text first, so most records are Greek
@@ -40,60 +47,28 @@ MOBILE_PREFIX, MOBILE_DIGITS = "69", 8
 LANDLINE_PREFIX, LANDLINE_DIGITS = "2", 9
 PHONE_GROUP = 3  # separators split a number into 3-3-rest digits
 
-CASES = ("gen", "acc", "voc")
-# Ending -> (genitive, accusative, vocative) endings. A name matching no ending stays as it is.
-MALE_ENDINGS = {
-    "ος": ("ου", "ο", "ε"),
-    "ός": ("ού", "ό", "έ"),
-    "ης": ("η", "η", "η"),
-    "ής": ("ή", "ή", "ή"),
-    "ας": ("α", "α", "α"),
-    "άς": ("ά", "ά", "ά"),
-    "ων": ("ωνος", "ωνα", "ων"),
-}
-FEMALE_FIRST_ENDINGS = {
-    "α": ("ας", "α", "α"),
-    "η": ("ης", "η", "η"),
-    "ή": ("ής", "ή", "ή"),
-    "ά": ("άς", "ά", "ά"),
-}
-
-# Names kept out of the pools: -ων names whose genitive is -ονος or -οντος (not -ωνος), Βάιος
-# (genitive Βαΐου needs a diaeresis), and Faker names with a missing or doubled accent.
-EXCLUDED_NAMES = {
-    "Αγαμέμνων", "Δράκων", "Ιάσων", "Λέων", "Ναπολέων", "Παντελεήμων", "Σώζων", "Τιμολέων",
-    "Φιλήμων", "Βάιος", "Κουτσογιάννόπουλος", "Τηλεμαχος", "Βουτσελας", "Τζαλλας", "Αίας",
-    "Τσιωλξ",
-}  # fmt: skip
-
-ACCENT = dict(zip("αεηιουωΑΕΗΙΟΥΩ", "άέήίόύώΆΈΉΊΌΎΏ", strict=True))
-ACCENTED = set(ACCENT.values()) | set("ΐΰ")
-VOWELS = set(ACCENT) | ACCENTED | set("ϊϋ")
-DIPHTHONGS = {"αι", "ει", "οι", "υι", "ου", "αυ", "ευ", "ηυ"}
-DIAERESIS = "ϊϋΐΰ"  # breaks a diphthong: Βαϊτσόπουλος has four syllables before -λος
-
 ARTICLES = {
-    ("M", "nom"): "ο",
-    ("M", "gen"): "του",
-    ("M", "acc"): "τον",
-    ("F", "nom"): "η",
-    ("F", "gen"): "της",
-    ("F", "acc"): "την",
+    ("M", "nominative"): "ο",
+    ("M", "genitive"): "του",
+    ("M", "accusative"): "τον",
+    ("F", "nominative"): "η",
+    ("F", "genitive"): "της",
+    ("F", "accusative"): "την",
 }
 
 # The accusative article keeps its -ν (την, τον) even before consonants, as written text does.
 # Placeholders: {PERSON:case} for Greek (adds the article), {PERSON} for English, {AFM} etc.
-# {FIRST:voc} and {SURNAME:voc} are the first name or surname alone, {ADDRESS} is
+# {FIRST:vocative} and {SURNAME:vocative} are the first name or surname alone, {ADDRESS} is
 # "Αγαπητέ κύριε" or "Αγαπητή κυρία" by the person's gender.
 TEMPLATES = {
     "train": {
         "greek": [
-            "Η αίτηση {PERSON:gen} καταχωρήθηκε με ΑΦΜ {AFM}.",
-            "Καλημέρα, {PERSON:voc}. Ο ΑΜΚΑ σας είναι {AMKA} και το τηλέφωνό σας {PHONE}.",
-            "Σύμφωνα με το αρχείο, {PERSON:nom} έστειλε τα έγγραφα στο {EMAIL}.",
-            "Η εφορία ειδοποίησε {PERSON:acc} για την επιστροφή φόρου στο IBAN {IBAN}.",
-            "{ADDRESS} {SURNAME:voc}, η δήλωσή σας με ΑΦΜ {AFM} εγκρίθηκε.",
-            "{FIRST:voc}, σου έστειλα το αρχείο. Γράψε μου στο {EMAIL}.",
+            "Η αίτηση {PERSON:genitive} καταχωρήθηκε με ΑΦΜ {AFM}.",
+            "Καλημέρα, {PERSON:vocative}. Ο ΑΜΚΑ σας είναι {AMKA} και το τηλέφωνό σας {PHONE}.",
+            "Σύμφωνα με το αρχείο, {PERSON:nominative} έστειλε τα έγγραφα στο {EMAIL}.",
+            "Η εφορία ειδοποίησε {PERSON:accusative} για την επιστροφή φόρου στο IBAN {IBAN}.",
+            "{ADDRESS} {SURNAME:vocative}, η δήλωσή σας με ΑΦΜ {AFM} εγκρίθηκε.",
+            "{FIRST:vocative}, σου έστειλα το αρχείο. Γράψε μου στο {EMAIL}.",
         ],
         "english": [
             "Please update the record for {PERSON}: tax ID {AFM}, phone {PHONE}.",
@@ -103,12 +78,12 @@ TEMPLATES = {
     },
     "test": {
         "greek": [
-            "Το ραντεβού {PERSON:gen} έχει οριστεί για Τρίτη. ΑΜΚΑ {AMKA}, τηλ. {PHONE}.",
-            "Είδα {PERSON:acc} χθες στο ιατρείο. Στείλτε τα αποτελέσματα στο {EMAIL}.",
-            "Σύμφωνα με την τράπεζα, {PERSON:nom} έχει λογαριασμό {IBAN} και ΑΦΜ {AFM}.",
-            "Καλησπέρα, {PERSON:voc}. Θα σας καλέσουμε στο {PHONE}.",
-            "{ADDRESS} {SURNAME:voc}, ο λογαριασμός {IBAN} είναι ενεργός.",
-            "{FIRST:voc}, πάρε με στο {PHONE} όταν μπορείς.",
+            "Το ραντεβού {PERSON:genitive} έχει οριστεί για Τρίτη. ΑΜΚΑ {AMKA}, τηλ. {PHONE}.",
+            "Είδα {PERSON:accusative} χθες στο ιατρείο. Στείλτε τα αποτελέσματα στο {EMAIL}.",
+            "Σύμφωνα με την τράπεζα, {PERSON:nominative} έχει λογαριασμό {IBAN} και ΑΦΜ {AFM}.",
+            "Καλησπέρα, {PERSON:vocative}. Θα σας καλέσουμε στο {PHONE}.",
+            "{ADDRESS} {SURNAME:vocative}, ο λογαριασμός {IBAN} είναι ενεργός.",
+            "{FIRST:vocative}, πάρε με στο {PHONE} όταν μπορείς.",
         ],
         "english": [
             "Please call {PERSON} on {PHONE} about the claim, tax ID {AFM}.",
@@ -143,62 +118,17 @@ class Person:
     def first_form(self, case: str) -> str:
         if not self.greek:
             return self.first
-        return inflect(
-            self.first, MALE_ENDINGS if self.gender == "M" else FEMALE_FIRST_ENDINGS, case
-        )
+        return inflect_name(self.first, self.gender, case, surname_only=False)
 
     def surname_form(self, case: str) -> str:
-        # Female surnames (-ου, -η, -α) do not change between cases.
-        if not self.greek or self.gender == "F":
+        if not self.greek:
             return self.surname
-        return inflect(self.surname, MALE_ENDINGS, case)
+        return inflect_name(self.surname, self.gender, case, surname_only=True)
 
     def name(self, case: str) -> str:
-        return f"{self.first_form(case)} {self.surname_form(case)}"
-
-
-def syllables(word: str) -> list[tuple[int, int]]:
-    spans = []
-    i = 0
-    while i < len(word):
-        if word[i] not in VOWELS:
-            i += 1
-            continue
-        pair = word[i : i + 2]
-        if len(pair) == 2 and word[i].lower() + strip_accents(pair[1]).lower() in DIPHTHONGS:
-            joined = pair[1] not in DIAERESIS
-        else:
-            joined = False
-        spans.append((i, i + 1 + joined))
-        i += 1 + joined
-    return spans
-
-
-def shift_accent(word: str) -> str:
-    """The long ending -ου cannot follow an accent on the third syllable from the end."""
-    spans = syllables(word)
-    accented = [i for i, (start, end) in enumerate(spans) if ACCENTED & set(word[start:end])]
-    if not word.endswith("ου") or accented != [len(spans) - 3]:
-        return word
-    (old_start, old_end), (_, new_end) = spans[accented[0]], spans[accented[0] + 1]
-    old = "".join(strip_accents(c) if c in ACCENTED else c for c in word[old_start:old_end])
-    # The mark goes on the last vowel of a diphthong: ει -> εί.
-    new_last = ACCENT[word[new_end - 1]]
-    return word[:old_start] + old + word[old_end : new_end - 1] + new_last + word[new_end:]
-
-
-def inflect(name: str, endings: dict[str, tuple[str, str, str]], case: str) -> str:
-    if case == "nom":
-        return name
-    for ending, forms in endings.items():
-        if name.endswith(ending):
-            inflected = name[: -len(ending)] + forms[CASES.index(case)]
-            return shift_accent(inflected) if case == "gen" else inflected
-    return name
-
-
-def strip_accents(text: str) -> str:
-    return "".join(c for c in unicodedata.normalize("NFD", text) if not unicodedata.combining(c))
+        if not self.greek:
+            return f"{self.first} {self.surname}"
+        return inflect_name(f"{self.first} {self.surname}", self.gender, case, surname_only=False)
 
 
 def stem(name: str) -> str:
@@ -332,9 +262,9 @@ def make_record(rng: random.Random, split: str) -> dict:
             text += ADDRESS_FORMS[person.gender]
             continue
         if kind == "PERSON":
-            if greek and case != "voc":
+            if greek and case != "vocative":
                 text += ARTICLES[person.gender, case] + " "
-            surface = person.name(case or "nom")
+            surface = person.name(case or "nominative")
         elif kind == "FIRST":
             surface = person.first_form(case)
         elif kind == "SURNAME":
