@@ -9,7 +9,12 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest==9.2.0", "ruff==0.17.6"]
-eval = ["Faker==40.54.0", "pyarrow==26.0.1"]
+eval = [
+    "Faker==40.54.0",
+    "presidio-analyzer==2.2.366",
+    "pyarrow==26.0.1",
+    "spacy==3.8.18",
+]
 
 [build-system]
 requires = ["setuptools>=77"]
