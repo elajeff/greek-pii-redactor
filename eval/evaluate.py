@@ -1,11 +1,15 @@
 """Scores detectors on exact span matches (start, end, kind), per dataset and per kind.
 
 Detectors: "rules only" (find_ids from rules.py) and "Presidio + spaCy el" (Presidio's built-in
-recognizers on top of the Greek spaCy model).
+recognizers on top of the Greek spaCy model). With --model-dir, also "XLM-R tagger + rules": the
+rules for IDs plus the fine-tuned PERSON tagger.
 
 Setup: pip install -e ".[eval]" and then
     python -m spacy download el_core_news_lg
 The model is not on PyPI. Its licence is CC BY-NC-SA 3.0, non-commercial use only.
+For the tagger: pip install -e ".[train]", train it (needs a CUDA GPU) with
+    python train/train_tagger.py --out <weights dir outside the repo>
+and pass the same directory as --model-dir.
 
 Data (in --data-dir, default data/), created by:
     python eval/make_synthetic.py --seed 7 --split test --count 2000
@@ -111,13 +115,22 @@ def print_scores(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
+    parser.add_argument("--model-dir", type=Path, help="weights from train/train_tagger.py")
     args = parser.parse_args()
+    if args.model_dir and not args.model_dir.is_dir():
+        raise SystemExit(f"{args.model_dir} not found. Train it with: python train/train_tagger.py")
 
     datasets = [
         (file_name, kinds, load_records(args.data_dir, file_name, command))
         for file_name, kinds, command in DATASETS
     ]
     detectors = {"rules only": find_ids, "Presidio + spaCy el": build_presidio()}
+    if args.model_dir:
+        # Imported here so the other detectors run without torch and transformers installed.
+        from greek_pii_redactor.tagger import load_tagger
+
+        tag_persons = load_tagger(args.model_dir)
+        detectors["XLM-R tagger + rules"] = lambda text: sorted(find_ids(text) + tag_persons(text))
 
     for file_name, kinds, records in datasets:
         heading = f"{file_name}: {len(records)} sentences"

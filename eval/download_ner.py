@@ -6,6 +6,7 @@ Licences, as stated on each dataset's Hugging Face page:
 
 Output is one JSON object per line: {"text": ..., "spans": [[start, end, "PERSON"], ...]}
 with character offsets, end exclusive. Tokens are joined with single spaces.
+WikiANN test sentences that also occur in its train or validation split are dropped.
 """
 
 import argparse
@@ -78,8 +79,13 @@ def main() -> None:
     parser.add_argument("--out-dir", type=Path, default=Path("data"))
     args = parser.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    wikiann = {split: wikiann_records(split) for split in SPLITS}
+    # WikiANN repeats sentences across its splits; a test sentence the model trained on would
+    # inflate its score.
+    seen = {record["text"] for split in ("train", "validation") for record in wikiann[split]}
+    wikiann["test"] = [record for record in wikiann["test"] if record["text"] not in seen]
     for split in SPLITS:
-        write_jsonl(args.out_dir / f"wikiann_el_{split}.jsonl", wikiann_records(split))
+        write_jsonl(args.out_dir / f"wikiann_el_{split}.jsonl", wikiann[split])
         write_jsonl(args.out_dir / f"greek_legal_ner_{split}.jsonl", greek_legal_records(split))
 
 
