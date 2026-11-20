@@ -16,6 +16,21 @@ Removes personal data from Greek and English text before it goes to an LLM, and 
 
 Names and addresses, the placeholder and restore step and the proxy aren't built yet.
 
+## Test data
+
+`eval/make_synthetic.py` writes invented Greek and English sentences with labelled names and IDs. The same seed gives the same file, and train and test use different names and sentence templates:
+
+```powershell
+.\.venv\Scripts\python.exe eval/make_synthetic.py --seed 7 --split test --count 2000 --out data/synthetic_test.jsonl
+```
+
+`eval/download_ner.py` downloads real Greek text with person labels into `data/`. Nothing from these datasets is stored in the repo.
+
+| Dataset | Licence on its Hugging Face page |
+| --- | --- |
+| [unimelb-nlp/wikiann](https://huggingface.co/datasets/unimelb-nlp/wikiann) (`el`) | unknown; labels are machine-generated from Wikipedia |
+| [joelniklaus/greek_legal_ner](https://huggingface.co/datasets/joelniklaus/greek_legal_ner) | CC BY-NC-SA 4.0 |
+
 ## Run from source
 
 Python 3.13 (64-bit). From the repository root in PowerShell:
@@ -23,7 +38,7 @@ Python 3.13 (64-bit). From the repository root in PowerShell:
 ```powershell
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,eval]"
 ```
 
 ## Tests
