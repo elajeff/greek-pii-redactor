@@ -1,0 +1,102 @@
+"""Command line: redact a file, restore it with the saved mapping, or run the proxy."""
+
+import argparse
+import json
+import sys
+from collections.abc import Callable
+from pathlib import Path
+
+from greek_pii_redactor.redact import redact, restore
+from greek_pii_redactor.rules import Span
+
+NAMES_NOT_REDACTED = "Names are not redacted: pass --model-dir to redact them."
+
+
+def read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", newline="")
+    except OSError as error:
+        raise SystemExit(f"Cannot read {path}: {error.strerror}") from error
+    except UnicodeDecodeError as error:
+        raise SystemExit(f"{path} is not UTF-8 text") from error
+
+
+def load_name_detector(model_dir: Path | None) -> Callable[[str], list[Span]] | None:
+    if model_dir is None:
+        print(NAMES_NOT_REDACTED, file=sys.stderr)
+        return None
+    if not model_dir.is_dir():
+        raise SystemExit(f"{model_dir} not found. Train it with: python train/train_tagger.py")
+    # Imported here so the commands that don't need names work without torch installed.
+    from greek_pii_redactor.tagger import load_tagger
+
+    return load_tagger(model_dir)
+
+
+def run_redact(args: argparse.Namespace) -> None:
+    mapping_path = args.mapping or args.file.with_name(f"{args.file.name}.mapping.json")
+    if mapping_path.exists():
+        raise SystemExit(f"{mapping_path} already exists: it is not overwritten. Use --mapping.")
+    text = read_text(args.file)
+    detect_names = load_name_detector(args.model_dir)
+    try:
+        redacted, placeholders = redact(text, detect_names)
+    except ValueError as error:
+        raise SystemExit(f"{args.file}: {error}") from error
+    mapping = json.dumps(placeholders, ensure_ascii=False, indent=2)
+    mapping_path.write_text(mapping, encoding="utf-8")
+    print(redacted, end="")
+
+
+def run_restore(args: argparse.Namespace) -> None:
+    try:
+        placeholders = json.loads(read_text(args.mapping))
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"{args.mapping} is not valid JSON: {error}") from error
+    if not isinstance(placeholders, dict):
+        raise SystemExit(f"{args.mapping} is not a mapping written by the redact command")
+    print(restore(read_text(args.file), placeholders), end="")
+
+
+def run_serve(args: argparse.Namespace) -> None:
+    try:
+        import uvicorn
+
+        from greek_pii_redactor.proxy import create_app
+    except ImportError as error:
+        raise SystemExit(
+            f"{error.msg}. Install the server dependencies: pip install greek-pii-redactor[serve]"
+        ) from error
+    app = create_app(args.upstream, load_name_detector(args.model_dir))
+    # The access log prints the request path and query string, which can hold personal data.
+    uvicorn.run(app, host=args.host, port=args.port, access_log=False)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="greek-pii-redactor", description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    redact_command = commands.add_parser("redact", help="print FILE with personal data replaced")
+    redact_command.add_argument("file", type=Path)
+    redact_command.add_argument("--model-dir", type=Path, help="PERSON tagger weights")
+    redact_command.add_argument(
+        "--mapping", type=Path, help="where to write the mapping (default: FILE.mapping.json)"
+    )
+    redact_command.set_defaults(run=run_redact)
+
+    restore_command = commands.add_parser("restore", help="print FILE with the originals back")
+    restore_command.add_argument("file", type=Path)
+    restore_command.add_argument("--mapping", type=Path, required=True)
+    restore_command.set_defaults(run=run_restore)
+
+    serve_command = commands.add_parser("serve", help="run the OpenAI-compatible proxy")
+    serve_command.add_argument("--upstream", required=True, help="e.g. http://localhost:11434/v1")
+    serve_command.add_argument("--model-dir", type=Path, help="PERSON tagger weights")
+    serve_command.add_argument("--host", default="127.0.0.1")
+    serve_command.add_argument("--port", type=int, default=8080)
+    serve_command.set_defaults(run=run_serve)
+
+    args = parser.parse_args()
+    # Redirected output would be cp1252 on Windows and turn LF into CRLF.
+    sys.stdout.reconfigure(encoding="utf-8", newline="\n")
+    args.run(args)

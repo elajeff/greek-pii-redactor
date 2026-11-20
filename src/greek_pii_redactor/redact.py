@@ -111,9 +111,15 @@ def word_before(text: str, position: int) -> str:
 
 
 def redact(
-    text: str, detect_names: Callable[[str], list[Span]] | None = None
+    text: str,
+    detect_names: Callable[[str], list[Span]] | None = None,
+    placeholders: Placeholders | None = None,
 ) -> tuple[str, Placeholders]:
-    """Raises ValueError if the text already contains a placeholder, which restore would replace."""
+    """Raises ValueError if the text already contains a placeholder, which restore would replace.
+
+    Pass the placeholders of an earlier call to share them: the same value gets the same
+    placeholder and new ones continue the numbering. They are extended in place and returned.
+    """
     if PLACEHOLDER_PATTERN.search(text):
         raise ValueError("text already contains a placeholder such as [PERSON_1]")
     ids = find_ids(text)
@@ -128,7 +134,8 @@ def redact(
         else:
             names.append(name)
 
-    placeholders: Placeholders = {}
+    if placeholders is None:
+        placeholders = {}
     pieces: list[str] = []
     position = 0
     for span in sorted(ids + names):
@@ -167,7 +174,8 @@ def restore(reply: str, placeholders: Placeholders) -> str:
     def original(match: re.Match[str]) -> str:
         forms = placeholders.get(match.group())
         if forms is None:
-            return match.group()
+            # Brackets off, so the next turn of a chat does not trip redact's placeholder check.
+            return match.group()[1:-1]
         if match.group(1) == "PERSON":
             return pick_form(forms, word_before(reply, match.start()))["text"]
         return forms[0]["text"]

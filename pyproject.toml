@@ -8,7 +8,7 @@ requires-python = ">=3.13"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest==9.2.0", "ruff==0.17.6"]
+dev = ["pytest==9.2.0", "ruff==0.17.6", "greek-pii-redactor[serve]"]
 eval = [
     "Faker==40.54.0",
     "presidio-analyzer==2.2.366",
@@ -16,6 +16,10 @@ eval = [
     "spacy==3.8.18",
 ]
 train = ["torch==2.15.0", "transformers==5.23.0"]
+serve = ["fastapi==0.165.0", "httpx==0.28.1", "uvicorn==0.54.0"]
+
+[project.scripts]
+greek-pii-redactor = "greek_pii_redactor.cli:main"
 
 [build-system]
 requires = ["setuptools>=77"]

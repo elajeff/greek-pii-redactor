@@ -97,6 +97,14 @@ def test_same_id_shares_a_placeholder(text: str, expected: str) -> None:
     assert redacted == expected
 
 
+def test_placeholders_are_shared_across_calls() -> None:
+    _, placeholders = redact("Mail nikos@example.gr.")
+    text = "Mail nikos@example.gr or maria@example.gr."
+    redacted, placeholders = redact(text, None, placeholders)
+    assert redacted == "Mail [EMAIL_1] or [EMAIL_2]."
+    assert list(placeholders) == ["[EMAIL_1]", "[EMAIL_2]"]
+
+
 def test_id_wins_over_overlapping_name_span() -> None:
     text = "Καλέστε το 6912345678 σήμερα."
     start = text.index("το")
@@ -149,7 +157,10 @@ def test_restore_when_the_reply_dropped_or_invented_placeholders() -> None:
     text = "Ο Νίκος Παπαδόπουλος, ΑΦΜ 123456783, τηλ. 6912345678."
     _, placeholders = redact(text, find_names("Νίκος Παπαδόπουλος"))
     reply = "Το ΑΦΜ [AFM_1] και το [AFM_7]."
-    assert restore(reply, placeholders) == "Το ΑΦΜ 123456783 και το [AFM_7]."
+    # An unknown placeholder loses its brackets, so the next turn passes redact's placeholder check.
+    restored = restore(reply, placeholders)
+    assert restored == "Το ΑΦΜ 123456783 και το AFM_7."
+    redact(restored)
 
 
 @pytest.mark.parametrize("spans", [[(2, 7), (2, 20)], [(8, 20), (2, 13)]])
