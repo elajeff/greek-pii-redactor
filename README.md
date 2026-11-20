@@ -27,7 +27,40 @@ Removes personal data from Greek and English text before it goes to an LLM, and 
 'Έλαβα: ΑΦΜ 123456783, τηλ. 6912345678, giorgos@example.gr'
 ```
 
-Pass `redact` a name detector (for example the tagger) as its second argument to replace names too. The same person in different Greek cases gets one placeholder (`[PERSON_1]` for Νίκος and Νίκου). On restore, the form is chosen by the article before the placeholder, from the forms seen in the input. If the reply needs a case the input never had, restore uses the first form seen, so the Greek can be wrong. The limits are listed at the top of `redact.py`. Addresses and the proxy aren't built yet.
+Pass `redact` a name detector (for example the tagger) as its second argument to replace names too. The same person in different Greek cases gets one placeholder (`[PERSON_1]` for Νίκος and Νίκου). On restore, the form is chosen by the article before the placeholder, from the forms seen in the input. If the reply needs a case the input never had, restore uses the first form seen, so the Greek can be wrong. A placeholder that isn't in the mapping (the LLM made it up, or the CLI got the wrong mapping file) comes back without its brackets, as `PERSON_7`. The limits are listed at the top of `redact.py`. Addresses aren't detected yet.
+
+## Command line
+
+Installing the package adds a `greek-pii-redactor` command. `redact` prints the file with placeholders and writes the mapping next to it, `restore` puts the originals back into a reply:
+
+```powershell
+.\.venv\Scripts\greek-pii-redactor.exe redact letter.txt --model-dir C:\Users\you\weights\xlmr-person > letter.redacted.txt
+.\.venv\Scripts\greek-pii-redactor.exe restore reply.txt --mapping letter.txt.mapping.json
+```
+
+`--model-dir` needs the `train` extra (torch, transformers). Without it only IDs are replaced. The mapping file holds the original personal data, so treat it like the original text.
+
+## Proxy
+
+`serve` runs a local server that speaks the OpenAI chat completions API. Point a client at it instead of the provider: it redacts every message, forwards the request to `--upstream`, and restores the reply.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[serve,train]"
+.\.venv\Scripts\greek-pii-redactor.exe serve --upstream http://localhost:11434/v1 --model-dir C:\Users\you\weights\xlmr-person
+```
+
+It listens on `http://127.0.0.1:8080/v1` and passes the `Authorization` header on to the upstream. It doesn't log requests or replies.
+
+What it refuses with a 400, without forwarding anything:
+
+- `"stream": true`, tools and function calls
+- any request field outside `model`, `messages`, `temperature`, `top_p`, `max_tokens`, `max_completion_tokens`, `seed`, `stop`, `n`, `presence_penalty`, `frequency_penalty` and `stream`, or one of these with the wrong type
+- message keys other than `role` and `content`, a role other than `system`, `developer`, `user` and `assistant`, a `content` that is null, and parts other than `{"type": "text", "text": ...}`
+- a message that already contains a placeholder
+
+Message text and `stop` strings are redacted. `model` is sent as it is.
+
+If the upstream can't be reached it answers 502 with only the error type. Requests are redacted one at a time. `eval/latency.py` measures the time the proxy adds per request against an in-process fake upstream.
 
 ## Test data
 
@@ -94,6 +127,8 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -e ".[dev,eval]"
 ```
+
+`dev` includes the `serve` dependencies, which the proxy tests need.
 
 ## Tests
 
