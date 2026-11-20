@@ -28,6 +28,7 @@ from pathlib import Path
 from faker.providers.person import el_GR, en_US
 
 from greek_pii_redactor.inflect import (
+    EXCLUDED_NAMES,
     FEMALE_FIRST_ENDINGS,
     MALE_ENDINGS,
     inflect_name,
@@ -45,14 +46,6 @@ AMKA_SERIAL_DIGITS = 4  # after DDMMYY; the eleventh digit is the check digit
 MOBILE_PREFIX, MOBILE_DIGITS = "69", 8
 LANDLINE_PREFIX, LANDLINE_DIGITS = "2", 9
 PHONE_GROUP = 3  # separators split a number into 3-3-rest digits
-
-# Names kept out of the pools: -ων names whose genitive is -ονος or -οντος (not -ωνος), Βάιος
-# (genitive Βαΐου needs a diaeresis), and Faker names with a missing or doubled accent.
-EXCLUDED_NAMES = {
-    "Αγαμέμνων", "Δράκων", "Ιάσων", "Λέων", "Ναπολέων", "Παντελεήμων", "Σώζων", "Τιμολέων",
-    "Φιλήμων", "Βάιος", "Κουτσογιάννόπουλος", "Τηλεμαχος", "Βουτσελας", "Τζαλλας", "Αίας",
-    "Τσιωλξ",
-}  # fmt: skip
 
 ARTICLES = {
     ("M", "nominative"): "ο",

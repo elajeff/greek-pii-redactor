@@ -9,7 +9,10 @@ Limit: the rules follow the Faker el_GR name lists, not all Greek. Folk first na
 -η, -ή or -ά is left unchanged, because the same endings are far more often female surnames.
 """
 
+import re
 import unicodedata
+from functools import cache
+from itertools import product
 
 CASES = ("genitive", "accusative", "vocative")
 # Ending -> (genitive, accusative, vocative) endings. A name matching no ending stays as it is.
@@ -47,6 +50,19 @@ LEARNED_FINAL_IOS = ("ιος", "ιου", "ιο", "ιε")
 # The vocative of a first name of this many syllables or more takes -ε even when the accent is
 # on the second to last (Κωνσταντίνε).
 LONG_FIRST_NAME = 4
+# Names kept out of the accent table and the synthetic pools: -ων names whose genitive is -ονος or
+# -οντος (not -ωνος), Βάιος (genitive Βαΐου needs a diaeresis), and Faker names with a missing or
+# doubled accent (Ζηναϊς for Ζηναΐς).
+EXCLUDED_NAMES = {
+    "Αγαμέμνων", "Δράκων", "Ιάσων", "Λέων", "Ναπολέων", "Παντελεήμων", "Σώζων", "Τιμολέων",
+    "Φιλήμων", "Βάιος", "Κουτσογιάννόπουλος", "Τηλεμαχος", "Βουτσελας", "Τζαλλας", "Αίας",
+    "Τσιωλξ", "Ζηναϊς",
+}  # fmt: skip
+TONOS = "\u0301"
+DIAERESIS_MARK = "\u0308"
+# Greek words are accented on one of the last three syllables.
+ACCENT_REACH = 3
+LETTER_WITH_MARKS = re.compile(r".[\u0300-\u036f]*")  # a letter and the combining marks after it
 
 
 def strip_accents(text: str) -> str:
@@ -213,6 +229,83 @@ def nominative(form: str, gender: str, case: str, surname_only: bool) -> str | N
             return None
         nominatives.append(found)
     return " ".join(nominatives)
+
+
+@cache
+def accents_by_plain_form() -> dict[str, set[str]]:
+    """Unaccented lowercase form -> the accented forms it fits, over every case of every name in
+    the Faker el_GR lists."""
+    from faker.providers.person import el_GR  # slow to import, and only unaccented names need it
+
+    names = [
+        (el_GR.Provider.first_names_male, "M", True),
+        (el_GR.Provider.first_names_female, "F", True),
+        (el_GR.Provider.last_names_male, "M", False),
+        (el_GR.Provider.last_names_female, "F", False),
+    ]
+    accented: dict[str, set[str]] = {}
+    for listed, gender, first_name in names:
+        for name in set(listed) - EXCLUDED_NAMES:
+            forms = [name]
+            if gender == "M":
+                forms += [inflect_male(name, case, first_name) for case in CASES]
+            elif first_name:
+                forms += [inflect_female_first(name, case) for case in CASES]
+            for form in forms:
+                accented.setdefault(strip_accents(form).lower(), set()).add(form)
+    return accented
+
+
+def needs_accent(token: str) -> bool:
+    """A token with no tonos. A diaeresis alone is not an accent, and Greek does not accent a
+    one-syllable word."""
+    no_tonos = TONOS not in unicodedata.normalize("NFD", token)
+    return no_tonos and len(syllables(token.lower(), False)) > 1
+
+
+def is_listed(token: str) -> bool:
+    """Whether the token, or the last part of a hyphenated one, is a name in the Faker lists."""
+    return strip_accents(token.split("-")[-1]).lower() in accents_by_plain_form()
+
+
+def accent_candidates(token: str) -> list[str]:
+    """The accented forms a token can stand for: the listed ones, else the token with the accent
+    on each of its last three syllables. Each part of a hyphenated token is looked up on its own.
+    Empty for a token that mixes capitals and lowercase, other than a leading capital."""
+    if not needs_accent(token):
+        return [token]
+    if token not in (token.upper(), token.lower(), token.title()):
+        return []
+    if "-" in token:
+        return ["-".join(parts) for parts in product(*map(accent_candidates, token.split("-")))]
+    if listed := accents_by_plain_form().get(strip_accents(token).lower()):
+        return sorted(listed)
+    # Lowercase, because the ending rules match lowercase; the caller puts the style back.
+    word = token.lower()
+    ends = [end for _, end in syllables(word, False)[-ACCENT_REACH:]]
+    # The mark goes on the last vowel of a diphthong, as in shift_accent.
+    return [word[: end - 1] + ACCENT[word[end - 1]] + word[end:] for end in ends]
+
+
+def accent_on_second_to_last(token: str) -> bool:
+    """Whether the accent is on the second to last syllable of the token, or of the last part of
+    a hyphenated one."""
+    last_part = token.split("-")[-1]
+    spans = syllables(last_part, False)
+    return accented_syllables(last_part, spans) == [len(spans) - 2]
+
+
+def drop_tonos_and_unseen_diaeresis(written: str, seen: str) -> str:
+    """An output token without its tonos. An ι or υ has a diaeresis exactly where the same letter
+    of the token as seen in the input had one, so Χάιδως written for ΧΑΪΔΩ becomes ΧΑΪΔΩΣ."""
+    seen_letters = LETTER_WITH_MARKS.findall(unicodedata.normalize("NFD", seen))
+    kept = []
+    for i, letter in enumerate(LETTER_WITH_MARKS.findall(unicodedata.normalize("NFD", written))):
+        had_diaeresis = i < len(seen_letters) and DIAERESIS_MARK in seen_letters[i]
+        kept.append(
+            letter[0] + DIAERESIS_MARK if had_diaeresis and letter[0] in "ιυΙΥ" else letter[0]
+        )
+    return unicodedata.normalize("NFC", "".join(kept))
 
 
 def gender_of(nominative_name: str) -> str | None:

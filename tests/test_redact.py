@@ -146,6 +146,68 @@ def test_id_wins_over_overlapping_name_span() -> None:
                 ("Το βιβλίο της [PERSON_1].", "Το βιβλίο της Ελένης."),
             ]
         ],
+        # A token without accents or in capitals gets its accent from a list of names, or tries each
+        # position if unlisted, and its output is written back the way it was seen. An unlisted -ος
+        # name takes the vocative -ο (Ζβορκο, not Ζβορκέ) unless a seen form with an accent decides.
+        *[
+            (text, (name,), reply, expected)
+            for text, name, reply, expected in [
+                (
+                    "Ο Νικος Παπαδοπουλος ήρθε.",
+                    "Νικος Παπαδοπουλος",
+                    "Καλημέρα, [PERSON_1].",
+                    "Καλημέρα, Νικο Παπαδοπουλε.",
+                ),
+                (
+                    "Ο Νικος Παπαδόπουλος ήρθε.",
+                    "Νικος Παπαδόπουλος",
+                    "Καλημέρα, [PERSON_1].",
+                    "Καλημέρα, Νικο Παπαδόπουλε.",
+                ),
+                (
+                    "Ο ΝΙΚΟΣ Παπαδοπουλος ήρθε.",
+                    "ΝΙΚΟΣ Παπαδοπουλος",
+                    "Το βιβλίο του [PERSON_1].",
+                    "Το βιβλίο του ΝΙΚΟΥ Παπαδοπουλου.",
+                ),
+                ("Ο ΚΑΡΑΪΣΚΟΣ ήρθε.", "ΚΑΡΑΪΣΚΟΣ", "Του [PERSON_1].", "Του ΚΑΡΑΪΣΚΟΥ."),
+                ("Ο ΚΑΡΑΙΣΚΟΣ ήρθε.", "ΚΑΡΑΙΣΚΟΣ", "Του [PERSON_1].", "Του ΚΑΡΑΙΣΚΟΥ."),
+                ("Ο ΗΛΙΑΣ ήρθε.", "ΗΛΙΑΣ", "Καλημέρα, [PERSON_1].", "Καλημέρα, ΗΛΙΑ."),
+                ("Ο νικος ήρθε.", "νικος", "Καλημέρα, [PERSON_1].", "Καλημέρα, νικο."),
+                ("Το βιβλίο του Γεωργιου.", "Γεωργιου", "Ο [PERSON_1] ήρθε.", "Ο Γεωργιος ήρθε."),
+                ("Ο Ζβορκος ήρθε.", "Ζβορκος", "Καλημέρα, [PERSON_1].", "Καλημέρα, Ζβορκο."),
+                ("Ο ΝΊΚΟΣ ήρθε.", "ΝΊΚΟΣ", "Του [PERSON_1].", "Του ΝΊΚΟΥ."),
+                ("Ο ΓΙΑΝΝΗΣ ΣΚΑΣ ήρθε.", "ΓΙΑΝΝΗΣ ΣΚΑΣ", "Του [PERSON_1].", "Του ΓΙΑΝΝΗ ΣΚΑ."),
+                ("Ο ΖΒΟΡΚΟΣ ήρθε.", "ΖΒΟΡΚΟΣ", "Του [PERSON_1].", "Του ΖΒΟΡΚΟΥ."),
+            ]
+        ],
+        # The -ο rule goes by the nominative, so it also works from a seen genitive.
+        (
+            "Το σπίτι του Ζβορκου.",
+            ("Ζβορκου",),
+            "Καλημέρα, [PERSON_1].",
+            "Καλημέρα, Ζβορκο.",
+        ),
+        # Each part of a hyphenated surname is looked up on its own: Κωστόπουλος is listed.
+        (
+            "Ο Νικος Παπαδοπουλος-Κωστοπουλος ήρθε.",
+            ("Νικος Παπαδοπουλος-Κωστοπουλος",),
+            "Καλημέρα, [PERSON_1].",
+            "Καλημέρα, Νικο Παπαδοπουλος-Κωστοπουλε.",
+        ),
+        # An unlisted name whose accent readings disagree is inflected as it was written.
+        ("Η Κλαρα ήρθε.", ("Κλαρα",), "Το βιβλίο της [PERSON_1].", "Το βιβλίο της Κλαρας."),
+        # The diaeresis of the name as seen stays, though the listed form (Χάιδω) has none.
+        ("Η ΧΑΪΔΩ ήρθε.", ("ΧΑΪΔΩ",), "Το βιβλίο της [PERSON_1].", "Το βιβλίο της ΧΑΪΔΩΣ."),
+        # A listed name whose accents disagree (Ίωνα or Ιωνά) stays as seen, not guessed.
+        ("Μίλησα με τον ΙΩΝΑ.", ("ΙΩΝΑ",), "Του [PERSON_1].", "Του ΙΩΝΑ."),
+        # A seen form with an accent decides before the -ο rule for unlisted names.
+        (
+            "Ο Ζβορκος ήρθε. Του Ζβόρκου.",
+            ("Ζβορκος", "Ζβόρκου"),
+            "Καλημέρα, [PERSON_1].",
+            "Καλημέρα, Ζβόρκο.",
+        ),
     ],
 )
 def test_restore_picks_the_form_that_fits_the_article(
