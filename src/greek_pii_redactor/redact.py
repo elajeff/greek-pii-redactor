@@ -3,11 +3,12 @@
 Limit: restore builds the case a reply needs from the forms seen in the input and the rules in
 inflect.py, so the Greek can still be wrong where the rules cannot tell: a seen genitive in -ου
 gives the nominative only for a 2-syllable first name (Νίκου), -ίου (Γεωργίου), -αίου (Ματθαίου)
-and -πούλου, so Κωνσταντίνου, Αλεξάνδρου and surnames in -ου are not derived from it; the folk first
-names Σπήλιος and Στέλλιος (read as learned), a lone female name in -η, -ή or -ά (left as it is),
-and surname-first order (Παπαδοπούλου Μαρία). Latin-script names have no rules, so they use the
-seen forms; Greek-script foreign names are inflected like Greek ones (Τόμας Μίλερ gives Τόμα
-Μίλερ). When nothing can be derived, restore uses the first form seen.
+and -όπουλου/-οπούλου, so Κωνσταντίνου, Αλεξάνδρου and other surnames in -ου are not derived from
+it; the folk first names Σπήλιος and Στέλλιος (read as learned), a lone female name in -η, -ή or
+-ά that Faker does not list as a first name only (left as it is), and surname-first order
+(Παπαδοπούλου Μαρία). Latin-script names have no rules, so they use the seen forms; Greek-script
+foreign names are inflected like Greek ones (Τόμας Μίλερ gives Τόμα Μίλερ). When nothing
+can be derived, restore uses the first form seen.
 
 Limit: a first name of 4+ syllables in paroxytone -ος gets the vocative -ε (Κωνσταντίνε); for some
 (Λεονάρδο/Λεονάρδε, Βενιζέλο/Βενιζέλε) both are in use and -ε is chosen. When the genitive moves
@@ -33,9 +34,11 @@ Limit: how restore reads a name by how it was written (the lists are Faker's el_
   «Νικος» is «Νικο»). A name listed with two accents that give different text (Ιωνα: «Ίωνα» or
   «Ιωνά») stays as seen.
 - No accent and not in the lists: tried with the accent on each of the last three syllables, used
-  only if all agree, except an -ος vocative, which is -ο («Ζβορκος» gives «Ζβορκο», not «Ζβορκε»;
-  wrong for «Παμφιλος», where «Πάμφιλε» is right). Otherwise the name is inflected as written,
-  with no accent («Ζβορκια» and «της» give «Ζβορκιας»).
+  only if all agree, except a first name's -ος vocative, which is -ο («Ζβορκος» gives «Ζβορκο»,
+  not «Ζβορκε»; wrong for «Παμφιλος», where «Πάμφιλε» is right). A surname's -ος vocative is -ε
+  wherever the accent is (-άκος aside), so all readings agree («κύριε Ζβορκε», «Νίκο Ζβορκε»).
+  Otherwise the name is inflected as written, with no accent («Ζβορκια» and «της» give
+  «Ζβορκιας»).
 - Capitals mixed with lowercase, other than a leading capital (ΝΙΚΟς): the name stays as
   seen.
 

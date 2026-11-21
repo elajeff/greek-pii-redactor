@@ -6,7 +6,8 @@ a first name, except after a title (surname_only=True).
 
 Limit: the rules follow the Faker el_GR name lists, not all Greek. Folk first names in -ιος
 (Σπήλιος, Στέλλιος) are treated as learned (Σπηλίου instead of Σπήλιου). A lone female name in
--η, -ή or -ά is left unchanged, because the same endings are far more often female surnames.
+-η, -ή or -ά is left unchanged, because the same endings are far more often female surnames;
+the exception is a name Faker lists as a first name and not as a surname (Κυριακή).
 """
 
 import re
@@ -25,6 +26,11 @@ MALE_ENDINGS = {
     "ας": ("α", "α", "α"),
     "άς": ("ά", "ά", "ά"),
     "ων": ("ωνος", "ωνα", "ων"),
+    "ές": ("έ", "έ", "έ"),
+    "ες": ("ε", "ε", "ε"),
+    "ις": ("ι", "ι", "ι"),
+    "ούς": ("ού", "ού", "ού"),
+    "εύς": ("έως", "έα", "εύ"),
 }
 FEMALE_FIRST_ENDINGS = {
     "α": ("ας", "α", "α"),
@@ -34,8 +40,8 @@ FEMALE_FIRST_ENDINGS = {
     "ω": ("ως", "ω", "ω"),
     "ώ": ("ώς", "ώ", "ώ"),
 }
-# Only these endings mark a lone token as a female first name; -η, -ή, -ά and -ου are also
-# common female surnames.
+# Only these endings, or the Faker lists, mark a lone token as a female first name; -η, -ή, -ά
+# and -ου are also common female surnames.
 LONE_FEMALE_FIRST_ENDINGS = ("α", "ω", "ώ")
 FEMALE_GENITIVE_ENDINGS = ("ας", "άς", "ης", "ής", "ως", "ώς")
 
@@ -130,13 +136,17 @@ def accent_third_from_end(word: str, first_name: bool) -> str | None:
 
 
 def male_vocative(token: str, first_name: bool) -> str:
-    """The ending of the vocative of a name in -ος, which depends on where the accent is."""
+    """The ending of the vocative of a name in -ος, from -αίος and -άκος, else from where the accent
+    is."""
     if token.endswith("αίος"):
         return "ε"
+    if token.endswith("άκος"):
+        return "ο"
     spans = syllables(token, first_name)
     accented = accented_syllables(token, spans)
     from_end = len(spans) - accented[0] if accented else 0
-    if from_end == 2 and not (first_name and len(spans) >= LONG_FIRST_NAME):
+    # A surname accented on the second to last takes -ε (Μαλτέζε), a short first name -ο (Νίκο).
+    if from_end == 2 and first_name and len(spans) < LONG_FIRST_NAME:
         return "ο"
     return "ε"
 
@@ -147,7 +157,9 @@ def inflect_male(token: str, case: str, first_name: bool) -> str:
             if ending == "ος" and case == "vocative":
                 return token[:-2] + male_vocative(token, first_name)
             inflected = token[: -len(ending)] + forms[CASES.index(case)]
-            return shift_accent(inflected, first_name) if case == "genitive" else inflected
+            # A surname keeps the accent (Βούλγαρου), except -όπουλος (Παπαδοπούλου).
+            shifts = case == "genitive" and (first_name or token.endswith("όπουλος"))
+            return shift_accent(inflected, first_name) if shifts else inflected
     return token
 
 
@@ -168,7 +180,11 @@ def inflect_name(name: str, gender: str, case: str, surname_only: bool) -> str:
         first_name = index == 0 and not surname_only
         if gender == "M":
             inflected.append(inflect_male(token, case, first_name))
-        elif first_name and (len(tokens) > 1 or token.endswith(LONE_FEMALE_FIRST_ENDINGS)):
+        elif first_name and (
+            len(tokens) > 1
+            or token.endswith(LONE_FEMALE_FIRST_ENDINGS)
+            or strip_accents(token).lower() in lone_female_first_names()
+        ):
             inflected.append(inflect_female_first(token, case))
         else:
             inflected.append(token)
@@ -181,6 +197,8 @@ def male_nominative(token: str, case: str, first_name: bool) -> str | None:
     if case == "genitive":
         if token.endswith("πούλου"):
             return accent_third_from_end(token[: -len("πούλου")] + "πουλος", first_name)
+        if token.endswith("όπουλου"):
+            return token[:-2] + "ος"
         if token.endswith("ου"):
             if not first_name:
                 return None
@@ -190,9 +208,11 @@ def male_nominative(token: str, case: str, first_name: bool) -> str | None:
                 return accent_third_from_end(token[:-3] + "ιος", first_name)
             return token[:-2] + "ος" if len(syllables(token, first_name)) == 2 else None
         if token.endswith("ού"):
-            return token[:-2] + "ός"
+            return token[:-2] + "ός"  # -ός names far outnumber -ούς (Παππού reads as Παππός)
         if token.endswith("ωνος"):
             return token[:-2]
+        if token.endswith("έως"):
+            return token[:-3] + "εύς"
     else:
         if token.endswith("ου") and not first_name:
             return token
@@ -201,6 +221,8 @@ def male_nominative(token: str, case: str, first_name: bool) -> str | None:
     if token.endswith(("η", "ή", "α", "ά")):
         return token + "ς"
     if case == "accusative" and token.endswith(("ο", "ό")):
+        return token + "ς"
+    if token.endswith(("ι", "ού")) or (case != "vocative" and token.endswith(("ε", "έ"))):
         return token + "ς"
     if case == "vocative":
         if token.endswith(("ο", "ε")):
@@ -229,6 +251,17 @@ def nominative(form: str, gender: str, case: str, surname_only: bool) -> str | N
             return None
         nominatives.append(found)
     return " ".join(nominatives)
+
+
+@cache
+def lone_female_first_names() -> set[str]:
+    """Unaccented lowercase forms of the Faker el_GR female first names that are not also female
+    surnames."""
+    from faker.providers.person import el_GR  # slow to import, as in accents_by_plain_form
+
+    surnames = {strip_accents(name).lower() for name in el_GR.Provider.last_names_female}
+    first_names = {strip_accents(name).lower() for name in el_GR.Provider.first_names_female}
+    return first_names - surnames
 
 
 @cache

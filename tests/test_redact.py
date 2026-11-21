@@ -148,7 +148,8 @@ def test_id_wins_over_overlapping_name_span() -> None:
         ],
         # A token without accents or in capitals gets its accent from a list of names, or tries each
         # position if unlisted, and its output is written back the way it was seen. An unlisted -ος
-        # name takes the vocative -ο (Ζβορκο, not Ζβορκέ) unless a seen form with an accent decides.
+        # first name takes the vocative -ο (Ζβορκο, not Ζβορκέ) unless a seen form with an accent
+        # decides.
         *[
             (text, (name,), reply, expected)
             for text, name, reply, expected in [
