@@ -5,12 +5,11 @@ description = "Redacts personal data from Greek and English text before an LLM c
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = ["Faker==40.54.0"]
 
 [project.optional-dependencies]
 dev = ["pytest==9.2.0", "ruff==0.17.6", "greek-pii-redactor[serve]"]
 eval = [
-    "Faker==40.54.0",
     "presidio-analyzer==2.2.366",
     "pyarrow==26.0.1",
     "spacy==3.8.18",
