@@ -22,7 +22,7 @@ import random
 import re
 from collections import defaultdict
 
-from make_synthetic import ARTICLES, Person, first_names, surnames
+from make_synthetic import Person, article, first_names, surnames
 
 from greek_pii_redactor.inflect import inflect_name
 from greek_pii_redactor.redact import (
@@ -89,7 +89,7 @@ def prefix(person: Person, case: str, surname_only: bool) -> str:
         return TITLES[person.gender, case] + " "
     if case == "vocative":
         return "Καλημέρα, "
-    return ARTICLES[person.gender, case] + " "
+    return article(person.gender, case, person.first) + " "
 
 
 def main() -> None:

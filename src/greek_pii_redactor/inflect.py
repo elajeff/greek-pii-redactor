@@ -58,11 +58,11 @@ LEARNED_FINAL_IOS = ("ιος", "ιου", "ιο", "ιε")
 LONG_FIRST_NAME = 4
 # Names kept out of the accent table and the synthetic pools: -ων names whose genitive is -ονος or
 # -οντος (not -ωνος), Βάιος (genitive Βαΐου needs a diaeresis), and Faker names with a missing or
-# doubled accent (Ζηναϊς for Ζηναΐς).
+# doubled accent (Ζηναϊς for Ζηναΐς) or another misspelling (Ροδόφλος for Ροδόλφος).
 EXCLUDED_NAMES = {
     "Αγαμέμνων", "Δράκων", "Ιάσων", "Λέων", "Ναπολέων", "Παντελεήμων", "Σώζων", "Τιμολέων",
     "Φιλήμων", "Βάιος", "Κουτσογιάννόπουλος", "Τηλεμαχος", "Βουτσελας", "Τζαλλας", "Αίας",
-    "Τσιωλξ", "Ζηναϊς",
+    "Τσιωλξ", "Ζηναϊς", "Ροδόφλος",
 }  # fmt: skip
 TONOS = "\u0301"
 DIAERESIS_MARK = "\u0308"
