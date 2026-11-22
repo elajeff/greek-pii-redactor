@@ -13,10 +13,9 @@ The files in a names directory are written by train/train_inflection.py.
 import json
 import unicodedata
 from collections.abc import Iterable, Iterator
+from functools import cache
 from os.path import commonprefix
 from pathlib import Path
-
-import joblib
 
 from .inflect import (
     ACCENT,
@@ -26,6 +25,7 @@ from .inflect import (
     TONOS,
     accented_syllables,
     inflect_name,
+    inflection_roles,
     nominative,
     strip_accents,
     syllables,
@@ -45,6 +45,22 @@ CANDIDATE_EDITS = 5
 # Wiktionary gives two forms of a case for many names (Παπαδοπούλου, Παπαδόπουλου), so a nominative
 # is read back when the form is either of its two most probable.
 ROUND_TRIP_FORMS = 2
+# Below this probability the rules give a form instead of the classifier: the threshold in
+# eval/names_classifier.py with the most held-out names (one per case) whose form is in their
+# Wiktionary set, where no role, gender and case has fewer than the rules alone. On a tie the
+# highest: the classifier's less sure answers add nothing there, and they can be near-ties on
+# endings it has few names for (Κίμων: Κίμων 0.26, Κίμωνα 0.26).
+FORWARD_THRESHOLD = 0.6
+# Below this probability the rules read a form back instead of the classifier: the lowest threshold
+# in eval/names_classifier.py where the classifier's wrong read-backs are no more than the rules' in
+# every role, gender and case.
+READ_BACK_THRESHOLD = 0.9
+# The Faker el_GR list of each role and gender the lexicon holds; a female surname never changes.
+FAKER_LISTS = {
+    ("first", "M"): "first_names_male",
+    ("first", "F"): "first_names_female",
+    ("surname", "M"): "last_names_male",
+}
 # ΐ and ΰ without the accent but with the diaeresis.
 DIAERESIS_LETTERS = {"ΐ": "ϊ", "ΰ": "ϋ"}
 # The owner's calls on single names where Wiktionary's table differs from how they are used. The
@@ -54,6 +70,14 @@ OWNER_FORMS = {
     ("Ανδρόνικος", "first", "M"): {"vocative": ["Ανδρόνικε"]},
     ("Φόρος", "first", "M"): {"vocative": ["Φόρε", "Φόρο"]},
 }
+# The owner's call: modern Greek inflects these names from their accusative, like γέρων, γέροντας,
+# whose Wiktionary table (and άρχοντας') gives -οντα for the genitive, accusative and vocative.
+# Wiktionary has none of these names.
+OWNER_NAMES = [
+    {"word": word, "role": "first", "gender": "M"} | {case: [stem + "οντα"] for case in CASES}
+    for stem in ("Κρέ", "Λέ", "Δράκ", "Τιμολέ", "Ναπολέ")
+    for word in (stem + "ων", stem + "οντας")
+]
 
 
 def move_accent(word: str, first_name: bool, shift: int) -> str | None:
@@ -124,8 +148,10 @@ def owner_corrected(name: dict) -> dict:
 
 def read_names(path: Path) -> Iterator[dict]:
     """The lines of a names file, as written by eval/download_names.py, one at a time, with the
-    owner's calls applied, so training, the lexicon and the eval all use them."""
+    owner's calls applied, then the OWNER_NAMES the file has no line for, so training, the lexicon
+    and the eval all use them."""
     count = 0
+    keys = set()
     with path.open(encoding="utf-8") as file:
         for count, line in enumerate(file, 1):
             name = json.loads(line)
@@ -133,9 +159,13 @@ def read_names(path: Path) -> Iterator[dict]:
                 forms = name.get(case)
                 if not isinstance(forms, list) or not all(isinstance(f, str) for f in forms):
                     raise ValueError(f"{path} line {count}: {case} is not a list of strings")
+            keys.add((name["word"], name["role"], name["gender"]))
             yield owner_corrected(name)
     if not count:
         raise ValueError(f"{path} has no names")
+    for name in OWNER_NAMES:
+        if (name["word"], name["role"], name["gender"]) not in keys:
+            yield name
 
 
 def is_female_surname(role: str, gender: str) -> bool:
@@ -143,22 +173,115 @@ def is_female_surname(role: str, gender: str) -> bool:
     return role == "surname" and gender == "F"
 
 
+@cache
+def faker_names(role: str, gender: str) -> dict[str, set[str]]:
+    """The Faker el_GR names of a role and gender, by their spelling without accents."""
+    from faker.providers.person import el_GR  # slow to import, as in inflect.accents_by_plain_form
+
+    by_spelling: dict[str, set[str]] = {}
+    for name in getattr(el_GR.Provider, FAKER_LISTS[role, gender]):
+        by_spelling.setdefault(strip_accents(name), set()).add(name)
+    return by_spelling
+
+
 class Names:
     def __init__(self, names: Iterable[dict], models: dict) -> None:
         # (word, role, gender) -> the forms for each case, in the order of CASES.
         self.forms: dict[tuple[str, str, str], tuple[tuple[str, ...], ...]] = {}
         self.nominatives: dict[tuple[str, str, str, str], tuple[str, ...]] = {}
+        # (word without accents, role, gender) -> the words spelt so.
+        self.words_by_spelling: dict[tuple[str, str, str], set[str]] = {}
         for name in names:
             if is_female_surname(name["role"], name["gender"]):
                 continue
             key = (name["word"], name["role"], name["gender"])
             table = tuple(tuple(name[case]) for case in CASES)
             self.forms[key] = table
+            spelling = (strip_accents(key[0]), *key[1:])
+            self.words_by_spelling.setdefault(spelling, set()).add(key[0])
             for case, forms in zip(CASES, table, strict=True):
                 for form in forms:
                     index = (form, *key[1:], case)
                     self.nominatives[index] = self.nominatives.get(index, ()) + (key[0],)
         self.models = models
+
+    def inflect_name(self, name: str, gender: str, case: str, surname_only: bool) -> str:
+        """As inflect.inflect_name, with each token's form from the lexicon (the rules' form if it
+        is one of the listed ones, else the first) or, for a token not in it, from predict when it
+        is at least FORWARD_THRESHOLD sure, else from the rules."""
+        if case == "nominative":
+            return name
+        tokens = name.split()
+        capitalised = [with_capital(token) for token in tokens]
+        rules = inflect_name(" ".join(capitalised), gender, case, surname_only).split()
+        roles = inflection_roles(capitalised, gender, surname_only)
+        inflected = []
+        for token, capital, role, rules_form in zip(tokens, capitalised, roles, rules, strict=True):
+            listed = self.lookup(capital, role, gender, case)
+            if listed:
+                form = rules_form if rules_form in listed else listed[0]
+            else:
+                form, probability = self.predict(capital, role, gender, case)
+                if probability < FORWARD_THRESHOLD:
+                    form = rules_form
+            inflected.append(written_like(form, token))
+        return " ".join(inflected)
+
+    def nominative(self, form: str, gender: str, case: str, surname_only: bool) -> str | None:
+        """As inflect.nominative, with each token read back in this order. A male surname in -ου
+        that is a Faker el_GR male surname is itself in the genitive (Σακελλαρίου). A form the
+        lexicon lists gives its name; one it lists for several names gives the rules' nominative
+        if it is one of them, else None. Any other form is read back by unlisted_nominative."""
+        nominatives = []
+        for index, token in enumerate(form.split()):
+            role = "surname" if index or surname_only else "first"
+            capital = with_capital(token)
+            listed = self.reverse(capital, role, gender, case)
+            if (
+                (role, gender, case) == ("surname", "M", "genitive")
+                and capital.endswith("ου")
+                and capital in faker_names(role, gender).get(strip_accents(capital), ())
+            ):
+                found = capital
+            elif listed and len(listed) == 1:
+                found = listed[0]
+            elif listed:
+                rules = nominative(capital, gender, case, surname_only=role == "surname")
+                found = rules if rules in listed else None
+            else:
+                found = self.unlisted_nominative(capital, role, gender, case)
+            if found is None:
+                return None
+            nominatives.append(written_like(found, token))
+        return " ".join(nominatives)
+
+    def unlisted_nominative(self, form: str, role: str, gender: str, case: str) -> str | None:
+        """The rules' nominative if it is a known name, one of known_names (Γιαννακέα:
+        Γιαννακέας), else predict_nominative's when it is at least READ_BACK_THRESHOLD sure, else
+        the rules'. A predicted name that is not known gives way to the one known name spelt like
+        it without accents whose form in this case by the rules is the given form (Ανδρονίκου:
+        Ανδρόνικος, not Ανδρονίκος)."""
+        surname_only = role == "surname"
+        rules = nominative(form, gender, case, surname_only=surname_only)
+        if rules is not None and rules in self.known_names(rules, role, gender):
+            return rules
+        found, probability = self.predict_nominative(form, role, gender, case)
+        if probability < READ_BACK_THRESHOLD:
+            return rules
+        known = self.known_names(found, role, gender)
+        if found in known:
+            return found
+        fitting = [
+            name for name in known if inflect_name(name, gender, case, surname_only) == form
+        ]
+        return fitting[0] if len(fitting) == 1 else found
+
+    def known_names(self, name: str, role: str, gender: str) -> set[str]:
+        """The names of the lexicon and of the Faker el_GR list of a role and gender that are
+        spelt like the name without accents."""
+        spelling = strip_accents(name)
+        listed = self.words_by_spelling.get((spelling, role, gender), set())
+        return listed | faker_names(role, gender).get(spelling, set())
 
     def lookup(self, token: str, role: str, gender: str, case: str) -> tuple[str, ...] | None:
         if is_female_surname(role, gender):
@@ -223,5 +346,18 @@ class Names:
         return found
 
 
+def with_capital(token: str) -> str:
+    """The lexicon and the models hold names with a leading capital."""
+    return token[0].upper() + token[1:] if token.islower() else token
+
+
+def written_like(form: str, token: str) -> str:
+    """The form with its first letter lowercased again when the token was all lowercase."""
+    return form[0].lower() + form[1:] if token.islower() else form
+
+
 def load_names(names_dir: Path) -> Names:
+    # Imported here so redact.py can import this module without the names extra.
+    import joblib
+
     return Names(read_names(names_dir / LEXICON_FILE), joblib.load(names_dir / MODELS_FILE))

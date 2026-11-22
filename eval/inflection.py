@@ -144,7 +144,10 @@ def main() -> None:
             forms = placeholders[f"[PERSON_{number}]"]
             seen_cases = {read_context(form["article"])[0] for form in forms}
             _, gender, _ = read_context(word_before(start, len(start)))
-            if reply_case not in seen_cases and derive_form(forms, reply_case, gender) is None:
+            if (
+                reply_case not in seen_cases
+                and derive_form(forms, reply_case, gender, None) is None
+            ):
                 fell_back += 1
 
     print(

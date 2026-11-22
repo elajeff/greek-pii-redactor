@@ -1,18 +1,36 @@
 """Replaces personal data with placeholders like [PERSON_1] and puts it back in an LLM's reply.
 
-Limit: restore builds the case a reply needs from the forms seen in the input and the rules in
-inflect.py, so the Greek can still be wrong where the rules cannot tell: a seen genitive in -ου
-gives the nominative only for a 2-syllable first name (Νίκου), -ίου (Γεωργίου), -αίου (Ματθαίου)
-and -όπουλου/-οπούλου, so Κωνσταντίνου, Αλεξάνδρου and other surnames in -ου are not derived from
-it; the folk first names Σπήλιος and Στέλλιος (read as learned), a lone female name in -η, -ή or
--ά that Faker does not list as a first name only (left as it is), and surname-first order
-(Παπαδοπούλου Μαρία). Latin-script names have no rules, so they use the seen forms; Greek-script
-foreign names are inflected like Greek ones (Τόμας Μίλερ gives Τόμα Μίλερ). When nothing
-can be derived, restore uses the first form seen.
+Limit: without a names dir, restore builds the case a reply needs from the forms seen in the
+input and the rules in inflect.py, so the Greek can still be wrong where the rules cannot tell: a
+seen genitive in -ου gives the nominative only for a 2-syllable first name (Νίκου), -ίου
+(Γεωργίου), -αίου (Ματθαίου) and -όπουλου/-οπούλου, so Κωνσταντίνου, Αλεξάνδρου and other
+surnames in -ου are not derived from it; the folk first names Σπήλιος and Στέλλιος (read as
+learned), a lone female name in -η, -ή or -ά that Faker does not list as a first name only (left as
+it is), and surname-first order (Παπαδοπούλου Μαρία). Latin-script names have no rules, so they use
+the seen forms; Greek-script foreign names are inflected like Greek ones (Τόμας Μίλερ gives Τόμα
+Μίλερ). When nothing can be derived, restore uses the first form seen.
 
-Limit: a first name of 4+ syllables in paroxytone -ος gets the vocative -ε (Κωνσταντίνε); for some
-(Λεονάρδο/Λεονάρδε, Βενιζέλο/Βενιζέλε) both are in use and -ε is chosen. When the genitive moves
-the accent onto ι or υ after a vowel, the diaeresis is lost: Βάιος gives Βαίου (Βαΐου is right).
+Limit: without a names dir, a first name of 4+ syllables in paroxytone -ος gets the vocative -ε
+(Κωνσταντίνε); for some (Λεονάρδο/Λεονάρδε, Βενιζέλο/Βενιζέλε) both are in use and -ε is chosen.
+When the genitive moves the accent onto ι or υ after a vowel, the diaeresis is lost: Βάιος
+gives Βαίου (Βαΐου is right).
+
+With a names dir (names.py), each token's forms come from the Wiktionary lexicon, or for a name
+not in it from the classifier, and from the rules where the classifier is less than
+FORWARD_THRESHOLD sure. Seen forms the lexicon lists are read back from it: «του Αλεξάνδρου» gives
+«Ο Αλέξανδρος», Σπήλιος gives «του Σπήλιου», Βενιζέλος «Καλημέρα, Βενιζέλο» and Κρέων «του
+Κρέοντα». A male surname in -ου that Faker lists as one stays as it is in the genitive: «του
+κυρίου Σακελλαρίου» gives «Ο κύριος Σακελλαρίου». A form not in the lexicon is read back by the
+rules when they give a known name, one in the lexicon or in Faker's el_GR lists («κύριε Γιαννακέα»
+gives «Ο κύριος Γιαννακέας»). Otherwise the classifier reads it back when it is at least
+READ_BACK_THRESHOLD sure, and the rules when it is less sure («κύριε Ζβορκέα» gives «Ο κύριος
+Ζβορκέας»). A name from the classifier that is not known gives way to a known name spelt the same
+without accents whose form by the rules is the one seen: «του Ανδρονίκου» gives «Ο Ανδρόνικος»,
+not Ανδρονίκος.
+
+Limit: with a names dir, a surname in -ός that is not in the lexicon, where its -ούς twin is, has
+its genitive -ού read back as the twin. With the --holdout 0.1 --seed 7 build, Γεωργού gives
+Γεωργούς; the --holdout 0 build lists both, so the rules' Γεωργός is used.
 
 Limit: two forms of one person with no article before them (a bare nominative and a bare genitive)
 cannot be told apart in the reply, so restore(redacted text) may not give the input back exactly.
@@ -34,9 +52,10 @@ Limit: how restore reads a name by how it was written (the lists are Faker's el_
   «Νικος» is «Νικο»). A name listed with two accents that give different text (Ιωνα: «Ίωνα» or
   «Ιωνά») stays as seen.
 - No accent and not in the lists: tried with the accent on each of the last three syllables, used
-  only if all agree, except a first name's -ος vocative, which is -ο («Ζβορκος» gives «Ζβορκο»,
-  not «Ζβορκε»; wrong for «Παμφιλος», where «Πάμφιλε» is right). A surname's -ος vocative is -ε
-  wherever the accent is (-άκος aside), so all readings agree («κύριε Ζβορκε», «Νίκο Ζβορκε»).
+  only if all agree. Where they don't, a first name's -ος vocative is -ο («Ζβορκος» gives «Ζβορκο»,
+  not «Ζβορκε»; without a names dir «Παμφιλος» gives «Παμφιλο», where «Πάμφιλε» is right).
+  Without a names dir a surname's -ος vocative is -ε wherever the accent is (-άκος aside), so all
+  readings agree («κύριε Ζβορκε», «Νίκο Ζβορκε»); with a names dir these come out the same.
   Otherwise the name is inflected as written, with no accent («Ζβορκια» and «της» give
   «Ζβορκιας»).
 - Capitals mixed with lowercase, other than a leading capital (ΝΙΚΟς): the name stays as
@@ -63,6 +82,7 @@ from greek_pii_redactor.inflect import (
     nominative,
     strip_accents,
 )
+from greek_pii_redactor.names import Names
 from greek_pii_redactor.rules import Span, find_ids
 
 KINDS = ("PERSON", "AFM", "AMKA", "IBAN", "PHONE", "EMAIL")
@@ -298,9 +318,11 @@ def nominative_candidates(
     contexts: list[tuple[str, str | None, bool] | None],
     gender: str | None,
     guess_accents: bool,
+    names: Names | None,
 ) -> Iterator[tuple[str, list[str]]]:
     """For each seen form that can give a nominative: its text and the nominative of each accent
     reading."""
+    read_back = names.nominative if names else nominative
     for form, context in zip(forms, contexts, strict=True):
         # No word right before the name (start of the text, or any punctuation) is taken as a
         # nominative.
@@ -311,14 +333,16 @@ def nominative_candidates(
             if context and context[0] != "nominative":
                 lone_surname = context[2] and len(form["text"].split()) == 1
                 found = [
-                    nominative(reading, gender, context[0], lone_surname)
+                    read_back(reading, gender, context[0], lone_surname)
                     for reading in accent_readings(form["text"], guess_accents)
                 ]
                 if found and all(found):
                     yield form["text"], found
 
 
-def derive_form(forms: list[dict[str, str]], case: str, reply_gender: str | None) -> str | None:
+def derive_form(
+    forms: list[dict[str, str]], case: str, reply_gender: str | None, names: Names | None
+) -> str | None:
     contexts = [read_context(form["article"]) for form in forms]
     gender = next((context[1] for context in contexts if context and context[1]), reply_gender)
     # A single token is a surname only if the input had it after a title; a title in the reply
@@ -331,8 +355,12 @@ def derive_form(forms: list[dict[str, str]], case: str, reply_gender: str | None
     for attempt in ("guess", "foreign", "as_seen"):
         if attempt == "foreign" and case != "vocative":
             continue
+        # The foreign attempt is the owner's rule for foreign names, so the names dir does not
+        # change it.
+        inflect = names.inflect_name if names and attempt != "foreign" else inflect_name
         longest_tried = 0
-        for seen, readings in nominative_candidates(forms, contexts, gender, attempt != "as_seen"):
+        candidates = nominative_candidates(forms, contexts, gender, attempt != "as_seen", names)
+        for seen, readings in candidates:
             # A form with fewer tokens, such as a lone surname, would drop the first name.
             if len(seen.split()) < longest_tried:
                 continue
@@ -352,7 +380,7 @@ def derive_form(forms: list[dict[str, str]], case: str, reply_gender: str | None
             for nominative_name in readings:
                 name_gender = gender or gender_of(nominative_name)
                 lone_surname = after_title and len(nominative_name.split()) == 1
-                inflected = name_gender and inflect_name(
+                inflected = name_gender and inflect(
                     nominative_name, name_gender, case, lone_surname
                 )
                 if not inflected:
@@ -372,7 +400,7 @@ def derive_form(forms: list[dict[str, str]], case: str, reply_gender: str | None
     return None
 
 
-def pick_form(forms: list[dict[str, str]], word: str) -> str:
+def pick_form(forms: list[dict[str, str]], word: str, names: Names | None) -> str:
     context = read_context(word)
     if context is None:
         return forms[0]["text"]
@@ -381,17 +409,17 @@ def pick_form(forms: list[dict[str, str]], word: str) -> str:
         seen = read_context(form["article"])
         if seen and seen[0] == case:
             return form["text"]
-    return derive_form(forms, case, gender) or forms[0]["text"]
+    return derive_form(forms, case, gender, names) or forms[0]["text"]
 
 
-def restore(reply: str, placeholders: Placeholders) -> str:
+def restore(reply: str, placeholders: Placeholders, names: Names | None = None) -> str:
     def original(match: re.Match[str]) -> str:
         forms = placeholders.get(match.group())
         if forms is None:
             # Brackets off, so the next turn of a chat does not trip redact's placeholder check.
             return match.group()[1:-1]
         if match.group(1) == "PERSON":
-            return pick_form(forms, word_before(reply, match.start()))
+            return pick_form(forms, word_before(reply, match.start()), names)
         return forms[0]["text"]
 
     return PLACEHOLDER_PATTERN.sub(original, reply)

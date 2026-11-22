@@ -31,6 +31,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
+from greek_pii_redactor.names import Names
 from greek_pii_redactor.redact import Placeholders, redact, restore
 from greek_pii_redactor.rules import Span
 
@@ -137,6 +138,7 @@ def create_app(
     upstream_url: str,
     detect_names: Callable[[str], list[Span]] | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
+    names: Names | None = None,
 ) -> FastAPI:
     """`transport` is for tests and measurements: it lets the upstream be an ASGI app in process."""
     upstream_endpoint = f"{upstream_url.rstrip('/')}/chat/completions"
@@ -202,7 +204,7 @@ def create_app(
         for choice in choices:
             message = choice["message"]
             if isinstance(message.get("content"), str):
-                message["content"] = restore(message["content"], placeholders)
+                message["content"] = restore(message["content"], placeholders, names)
         # Not JSONResponse: it writes UTF-8, which fails on a lone surrogate the upstream may send.
         return Response(
             json.dumps(reply), status_code=upstream.status_code, media_type="application/json"

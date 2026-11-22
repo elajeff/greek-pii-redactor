@@ -27,6 +27,7 @@ from greek_pii_redactor.inflect import CASES
 from greek_pii_redactor.names import (
     LEXICON_FILE,
     MODELS_FILE,
+    OWNER_NAMES,
     derive_edit,
     features,
     is_female_surname,
@@ -52,8 +53,9 @@ def main() -> None:
     args = parser.parse_args()
 
     names = list(read_names(args.names))
-    # All roles of a word go to the same side, so a held-out word is unseen in any role.
-    words = sorted({name["word"] for name in names})
+    # All roles of a word go to the same side, so a held-out word is unseen in any role. The
+    # owner's names are always trained on.
+    words = sorted({name["word"] for name in names} - {name["word"] for name in OWNER_NAMES})
     random.Random(args.seed).shuffle(words)
     held_out = set(words[: round(args.holdout * len(words))])
     training = [name for name in names if name["word"] not in held_out]

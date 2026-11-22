@@ -6,6 +6,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from greek_pii_redactor.names import LEXICON_FILE, MODELS_FILE, Names, load_names
 from greek_pii_redactor.redact import redact, restore
 from greek_pii_redactor.rules import Span
 
@@ -33,6 +34,23 @@ def load_name_detector(model_dir: Path | None) -> Callable[[str], list[Span]] | 
     return load_tagger(model_dir)
 
 
+def load_names_dir(names_dir: Path | None) -> Names | None:
+    if names_dir is None:
+        return None
+    build = f"Build it with: python train/train_inflection.py --holdout 0 --out {names_dir}"
+    if not names_dir.is_dir():
+        raise SystemExit(f"{names_dir} not found. {build}")
+    for file_name in (LEXICON_FILE, MODELS_FILE):
+        if not (names_dir / file_name).is_file():
+            raise SystemExit(f"{names_dir} has no {file_name}. {build}")
+    try:
+        return load_names(names_dir)
+    except ImportError as error:
+        raise SystemExit(
+            f"{error.msg}. Install the names dependencies: pip install greek-pii-redactor[names]"
+        ) from error
+
+
 def run_redact(args: argparse.Namespace) -> None:
     mapping_path = args.mapping or args.file.with_name(f"{args.file.name}.mapping.json")
     if mapping_path.exists():
@@ -49,13 +67,14 @@ def run_redact(args: argparse.Namespace) -> None:
 
 
 def run_restore(args: argparse.Namespace) -> None:
+    names = load_names_dir(args.names_dir)
     try:
         placeholders = json.loads(read_text(args.mapping))
     except json.JSONDecodeError as error:
         raise SystemExit(f"{args.mapping} is not valid JSON: {error}") from error
     if not isinstance(placeholders, dict):
         raise SystemExit(f"{args.mapping} is not a mapping written by the redact command")
-    print(restore(read_text(args.file), placeholders), end="")
+    print(restore(read_text(args.file), placeholders, names), end="")
 
 
 def run_serve(args: argparse.Namespace) -> None:
@@ -67,7 +86,8 @@ def run_serve(args: argparse.Namespace) -> None:
         raise SystemExit(
             f"{error.msg}. Install the server dependencies: pip install greek-pii-redactor[serve]"
         ) from error
-    app = create_app(args.upstream, load_name_detector(args.model_dir))
+    names = load_names_dir(args.names_dir)
+    app = create_app(args.upstream, load_name_detector(args.model_dir), names=names)
     # The access log prints the request path and query string, which can hold personal data.
     uvicorn.run(app, host=args.host, port=args.port, access_log=False)
 
@@ -87,11 +107,17 @@ def main() -> None:
     restore_command = commands.add_parser("restore", help="print FILE with the originals back")
     restore_command.add_argument("file", type=Path)
     restore_command.add_argument("--mapping", type=Path, required=True)
+    restore_command.add_argument(
+        "--names-dir", type=Path, help="name forms built by train/train_inflection.py"
+    )
     restore_command.set_defaults(run=run_restore)
 
     serve_command = commands.add_parser("serve", help="run the OpenAI-compatible proxy")
     serve_command.add_argument("--upstream", required=True, help="e.g. http://localhost:11434/v1")
     serve_command.add_argument("--model-dir", type=Path, help="PERSON tagger weights")
+    serve_command.add_argument(
+        "--names-dir", type=Path, help="name forms built by train/train_inflection.py"
+    )
     serve_command.add_argument("--host", default="127.0.0.1")
     serve_command.add_argument("--port", type=int, default=8080)
     serve_command.set_defaults(run=run_serve)
