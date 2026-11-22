@@ -8,7 +8,7 @@ for several thresholds. Forward is also scored with the classifier answering at 
 FORWARD_THRESHOLDS and the rules below it; the threshold with the most names right where no role,
 gender and case does worse than the rules alone is printed (the highest on a tie). Read-back is
 also scored for Names.nominative, which looks at the lexicon and the Faker el_GR names first. Last,
-both are scored on forms the owner decided by hand.
+both are scored on forms checked by hand.
 
     PYTHONIOENCODING=utf-8 python eval/names_classifier.py --names-dir C:/Users/me/names-holdout
 """
@@ -18,13 +18,13 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from greek_pii_redactor.inflect import CASES, inflect_name, nominative
-from greek_pii_redactor.names import OWNER_NAMES, load_names, read_names
+from greek_pii_redactor.names import MANUAL_NAMES, load_names, read_names
 
 HOLDOUT_FILE = "holdout.jsonl"  # written by train/train_inflection.py
 THRESHOLDS = (0.5, 0.8, 0.9, 0.95, 0.99)
 FORWARD_THRESHOLDS = (0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
-# (word, role, gender, case, forms the owner accepts), from agent-docs/review7d.
-OWNER_FORMS = [
+# (word, role, gender, case, forms accepted), checked by hand.
+MANUAL_FORMS = [
     ("Μαλτέζος", "surname", "M", "vocative", {"Μαλτέζε"}),
     ("Ανάργυρος", "surname", "M", "vocative", {"Ανάργυρε"}),
     ("Τζαννετάκος", "first", "M", "vocative", {"Τζαννετάκο"}),
@@ -58,8 +58,8 @@ def main() -> None:
     holdout = args.names_dir / HOLDOUT_FILE
     if holdout.stat().st_size == 0:
         raise SystemExit(f"{holdout} is empty: train with --holdout above 0 to score")
-    # read_names adds the owner's names, which train_inflection.py always trains on.
-    held_out = [name for name in read_names(holdout) if name not in OWNER_NAMES]
+    # read_names adds the hand-checked names, which train_inflection.py always trains on.
+    held_out = [name for name in read_names(holdout) if name not in MANUAL_NAMES]
     names = load_names(args.names_dir)
 
     forward: dict[tuple, Counter] = defaultdict(Counter)
@@ -158,8 +158,8 @@ def main() -> None:
             cells += [share(read[outcome], forms) for outcome in ("right", "?", "wrong")]
         print("".join(cells))
 
-    print("\nowner's decisions (lexicon: the training names with the owner's overrides)")
-    for word, role, gender, case, accepted in OWNER_FORMS:
+    print("\nhand-checked forms (lexicon: the training names with the manual forms)")
+    for word, role, gender, case, accepted in MANUAL_FORMS:
         rules = inflect_name(word, gender, case, surname_only=role == "surname")
         predicted, probability = names.predict(word, role, gender, case)
         listed = names.lookup(word, role, gender, case)

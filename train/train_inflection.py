@@ -26,8 +26,8 @@ from sklearn.pipeline import make_pipeline
 from greek_pii_redactor.inflect import CASES
 from greek_pii_redactor.names import (
     LEXICON_FILE,
+    MANUAL_NAMES,
     MODELS_FILE,
-    OWNER_NAMES,
     derive_edit,
     features,
     is_female_surname,
@@ -55,9 +55,9 @@ def main() -> None:
 
     names = list(read_names(args.names))
     # All roles of a word go to the same side, so a held-out word is unseen in any role. The
-    # owner's names are always trained on. Each word's side comes from a hash of the seed and the
-    # word, not from a shuffle of the list, so adding an owner row moves no other word.
-    words = {name["word"] for name in names} - {name["word"] for name in OWNER_NAMES}
+    # hand-checked names are always trained on. Each word's side comes from a hash of the seed and
+    # the word, not from a shuffle of the list, so adding a hand-checked row moves no other word.
+    words = {name["word"] for name in names} - {name["word"] for name in MANUAL_NAMES}
     held_out = {
         word
         for word in words

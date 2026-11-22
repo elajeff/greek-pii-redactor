@@ -361,8 +361,8 @@ def derive_form(
     for attempt in ("guess", "foreign", "as_seen"):
         if attempt == "foreign" and case != "vocative":
             continue
-        # The foreign attempt is the owner's rule for foreign names, so the names dir does not
-        # change it.
+        # The foreign attempt always uses the plain rules, even with a names dir: it is the rule
+        # for foreign names.
         inflect = names.inflect_name if names and attempt != "foreign" else inflect_name
         longest_tried = 0
         candidates = nominative_candidates(forms, contexts, gender, attempt != "as_seen", names)

@@ -61,18 +61,20 @@ def tag_texts(
         return_tensors="pt",
     )
     offsets = encoded.pop("offset_mapping").tolist()
-    owners = encoded.pop("overflow_to_sample_mapping").tolist()
+    text_indices = encoded.pop("overflow_to_sample_mapping").tolist()
     encoded = encoded.to(model.device)
     labels: list[list[int]] = []
     with torch.no_grad():
-        for first in range(0, len(owners), WINDOW_BATCH_SIZE):
+        for first in range(0, len(text_indices), WINDOW_BATCH_SIZE):
             window_slice = slice(first, first + WINDOW_BATCH_SIZE)
             batch = {name: tensor[window_slice] for name, tensor in encoded.items()}
             labels += model(**batch).logits.argmax(dim=-1).tolist()
 
     found: list[list[Span]] = [[] for _ in texts]
-    for owner, window_offsets, window_labels in zip(owners, offsets, labels, strict=True):
-        found[owner] += decode_spans(window_offsets, window_labels)
+    for text_index, window_offsets, window_labels in zip(
+        text_indices, offsets, labels, strict=True
+    ):
+        found[text_index] += decode_spans(window_offsets, window_labels)
 
     merged_per_text = []
     for spans in found:
