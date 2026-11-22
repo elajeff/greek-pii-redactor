@@ -6,8 +6,10 @@ IBAN, PHONE, EMAIL) stay label O: the rules find those. WikiANN el validation pi
 exact character-span F1, and stops training after PATIENCE epochs without a gain. Needs a CUDA GPU.
 
 --without-synthetic trains on WikiANN only, --train-fraction uses a seeded sample of the training
-records (for a learning curve) and --seed seeds Python's and torch's random generators. Each
-epoch's numbers go to epochs.json in --out.
+records (for a learning curve) and --seed seeds Python's and torch's random generators.
+--leave-out-fold K (0 to 4, with --without-synthetic) leaves one fifth of the WikiANN training
+records out, to score them with a model that never saw them. Each epoch's numbers go to
+epochs.json in --out.
 
 Setup: pip install -e ".[train]", then the data scripts named in eval/evaluate.py.
 Run (the weights directory must be outside the repo, nothing from it is committed):
@@ -15,6 +17,7 @@ Run (the weights directory must be outside the repo, nothing from it is committe
 """
 
 import argparse
+import hashlib
 import json
 import math
 import random
@@ -53,6 +56,10 @@ WARMUP_FRACTION = 0.1  # the first tenth of the steps ramp the rate up, then it 
 MAX_GRAD_NORM = 1.0  # clips rare exploding gradients
 EVAL_BATCH_SIZE = 64  # no gradients are stored, so a larger batch than in training is fine
 
+FOLDS = 5  # a model trained on the other four fifths still sees 80% of the data
+FOLD_SEED = 0  # fixed, so a record lands in the same fold in every run
+HASH_BYTES = 8  # 64 bits of the hash, far more than the modulo needs
+
 WIKIANN_TRAIN_FILE = "wikiann_el_train.jsonl"
 SYNTHETIC_TRAIN_FILE = "synthetic_train.jsonl"
 VALIDATION_FILE = "wikiann_el_validation.jsonl"
@@ -66,6 +73,11 @@ def fraction(text: str) -> float:
     if not 0 < share <= 1:
         raise argparse.ArgumentTypeError(f"{text} is outside (0, 1]")
     return share
+
+
+def fold_of(record: dict) -> int:
+    digest = hashlib.sha256(f"{FOLD_SEED}:{record['text']}".encode()).digest()
+    return int.from_bytes(digest[:HASH_BYTES]) % FOLDS
 
 
 def load_records(path: Path) -> list[dict]:
@@ -176,7 +188,17 @@ def main() -> None:
         default=1.0,
         help="share of the training records to use, in (0, 1]",
     )
+    parser.add_argument(
+        "--leave-out-fold",
+        type=int,
+        choices=range(FOLDS),
+        help="leave this fold of the WikiANN training records out of training",
+    )
     args = parser.parse_args()
+    if args.leave_out_fold is not None and not args.without_synthetic:
+        parser.error("--leave-out-fold needs --without-synthetic")
+    if args.leave_out_fold is not None and args.train_fraction < 1.0:
+        parser.error("--leave-out-fold cannot be combined with --train-fraction")
 
     if not torch.cuda.is_available():
         raise SystemExit("No CUDA GPU found. Training on the CPU is not supported.")
@@ -190,6 +212,8 @@ def main() -> None:
     train_records = [
         record for name in train_files for record in load_records(args.data_dir / name)
     ]
+    if args.leave_out_fold is not None:
+        train_records = [r for r in train_records if fold_of(r) != args.leave_out_fold]
     if args.train_fraction < 1.0:
         train_records = random.Random(args.seed).sample(
             train_records, round(args.train_fraction * len(train_records))
@@ -262,6 +286,7 @@ def main() -> None:
             "seed": args.seed,
             "without_synthetic": args.without_synthetic,
             "train_fraction": args.train_fraction,
+            "leave_out_fold": args.leave_out_fold,
             "train_records": len(train_records),
             "best_epoch": best_epoch,
             "epochs": epoch_log,
