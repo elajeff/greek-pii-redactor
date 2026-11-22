@@ -63,19 +63,19 @@ FAKER_LISTS = {
 }
 # ΐ and ΰ without the accent but with the diaeresis.
 DIAERESIS_LETTERS = {"ΐ": "ϊ", "ΰ": "ϋ"}
-# The owner's calls on single names where Wiktionary's table differs from how they are used. The
-# owner's rule for whole groups is in owner_corrected.
-OWNER_FORMS = {
+# Forms checked by hand where Wiktionary's table differs from how the names are used. The rule
+# chosen by hand for whole groups is in corrected.
+MANUAL_FORMS = {
     ("Ντίνος", "first", "M"): {"vocative": ["Ντίνο"]},
     ("Ανδρόνικος", "first", "M"): {"vocative": ["Ανδρόνικε"]},
     ("Φόρος", "first", "M"): {"vocative": ["Φόρε", "Φόρο"]},
 }
-# The owner's call: modern Greek inflects the -οντα names from their accusative, like γέρων,
-# γέροντας, whose Wiktionary table (and άρχοντας') gives -οντα for the genitive, accusative and
-# vocative. Wiktionary has none of these names. Φιλήμων is the owner's call too (2026-11-22): its
-# Ancient Greek Wiktionary entry gives the genitive -ονος with no table, jw.org writes the
-# accusative Φιλήμονα, and Παντελεήμων's table gives the vocative -ον.
-OWNER_FIRST_NAMES = [
+# Modern Greek inflects the -οντα names from their accusative, like γέρων, γέροντας, whose
+# Wiktionary table (and άρχοντας') gives -οντα for the genitive, accusative and vocative.
+# Wiktionary has none of these names. Φιλήμων is set by hand too: its Ancient Greek Wiktionary
+# entry gives the genitive -ονος with no table, jw.org writes the accusative Φιλήμονα, and
+# Παντελεήμων's table gives the vocative -ον.
+MANUAL_FIRST_NAMES = [
     {"word": word, "role": "first", "gender": "M"} | {case: [stem + "οντα"] for case in CASES}
     for stem in ("Κρέ", "Λέ", "Δράκ", "Τιμολέ", "Ναπολέ")
     for word in (stem + "ων", stem + "οντας")
@@ -89,11 +89,11 @@ OWNER_FIRST_NAMES = [
         "vocative": ["Φιλήμον"],
     }
 ]
-# The owner's calls (2026-11-22) on the vocative of Faker male surnames in paroxytone -ος that
-# Wiktionary has no table for. Φαλιέρος, Χέλιος and Κατσίφος have the rules' -ε: no use of either
-# vocative was found for any of them. The genitive and accusative are stem+ου and stem+ο, as
-# Wiktionary gives them for nearly all paroxytone male surnames in -ος.
-OWNER_SURNAME_VOCATIVES = {
+# Vocatives checked by hand for Faker male surnames in paroxytone -ος that Wiktionary has no table
+# for. Φαλιέρος, Χέλιος and Κατσίφος have the rules' -ε: no use of either vocative was found for
+# any of them. The genitive and accusative are stem+ου and stem+ο, as Wiktionary gives them for
+# nearly all paroxytone male surnames in -ος.
+MANUAL_SURNAME_VOCATIVES = {
     "Ότσος": ["Ότσο"], "Βούλκος": ["Βούλκο"], "Βώσσος": ["Βώσσο"], "Γεροδήμος": ["Γεροδήμο"],
     "Γιαννέλος": ["Γιαννέλο"], "Γκανάτσιος": ["Γκανάτσιο"], "Γκούσκος": ["Γκούσκο"],
     "Γούσιος": ["Γούσιο"], "Δέλιος": ["Δέλιο"], "Ζιώγος": ["Ζιώγο"], "Ζώνιος": ["Ζώνιο"],
@@ -113,7 +113,7 @@ OWNER_SURNAME_VOCATIVES = {
     "Τσούμος": ["Τσούμο"], "Φαλιέρος": ["Φαλιέρε"], "Χέλιος": ["Χέλιε"],
     "Χατζηκύρκος": ["Χατζηκύρκο"],
 }
-OWNER_NAMES = OWNER_FIRST_NAMES + [
+MANUAL_NAMES = MANUAL_FIRST_NAMES + [
     {
         "word": word,
         "role": "surname",
@@ -122,7 +122,7 @@ OWNER_NAMES = OWNER_FIRST_NAMES + [
         "accusative": [word[:-2] + "ο"],
         "vocative": vocatives,
     }
-    for word, vocatives in OWNER_SURNAME_VOCATIVES.items()
+    for word, vocatives in MANUAL_SURNAME_VOCATIVES.items()
 ]
 
 
@@ -180,22 +180,22 @@ def tonos_count(token: str) -> int:
     return unicodedata.normalize("NFD", token).count(TONOS)
 
 
-def owner_corrected(name: dict) -> dict:
-    """The name with the owner's calls applied: OWNER_FORMS, and the vocative -ε for a male surname
-    in -ος accented on the third syllable from the end (Ανάργυρε; Wiktionary gives -ο for 32)."""
+def corrected(name: dict) -> dict:
+    """The name with MANUAL_FORMS applied, and the vocative -ε for a male surname in -ος accented
+    on the third syllable from the end (Ανάργυρε; Wiktionary gives -ο for 32)."""
     word, role, gender = name["word"], name["role"], name["gender"]
-    corrected = {**name, **OWNER_FORMS.get((word, role, gender), {})}
+    fixed = {**name, **MANUAL_FORMS.get((word, role, gender), {})}
     if role == "surname" and gender == "M" and word.endswith("ος"):
         spans = syllables(word, False)
         if accented_syllables(word, spans) == [len(spans) - 3]:
-            corrected["vocative"] = [word[:-2] + "ε"]
-    return corrected
+            fixed["vocative"] = [word[:-2] + "ε"]
+    return fixed
 
 
 def read_names(path: Path) -> Iterator[dict]:
     """The lines of a names file, as written by eval/download_names.py, one at a time, with the
-    owner's calls applied, then the OWNER_NAMES the file has no line for, so training, the lexicon
-    and the eval all use them."""
+    hand-checked forms applied, then the MANUAL_NAMES the file has no line for, so training, the
+    lexicon and the eval all use them."""
     count = 0
     keys = set()
     with path.open(encoding="utf-8") as file:
@@ -206,16 +206,16 @@ def read_names(path: Path) -> Iterator[dict]:
                 if not isinstance(forms, list) or not all(isinstance(f, str) for f in forms):
                     raise ValueError(f"{path} line {count}: {case} is not a list of strings")
             keys.add((name["word"], name["role"], name["gender"]))
-            yield owner_corrected(name)
+            yield corrected(name)
     if not count:
         raise ValueError(f"{path} has no names")
-    for name in OWNER_NAMES:
+    for name in MANUAL_NAMES:
         if (name["word"], name["role"], name["gender"]) not in keys:
             yield name
 
 
 def is_female_surname(role: str, gender: str) -> bool:
-    """The owner's rule: a female surname never changes, so it is not stored or predicted."""
+    """Female surnames never change, so they are not stored or predicted."""
     return role == "surname" and gender == "F"
 
 
