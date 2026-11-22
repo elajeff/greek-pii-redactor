@@ -35,21 +35,21 @@ Installing the package adds a `greek-pii-redactor` command. `redact` prints the 
 
 ```powershell
 .\.venv\Scripts\greek-pii-redactor.exe redact letter.txt --model-dir C:\Users\you\weights\xlmr-person > letter.redacted.txt
-.\.venv\Scripts\greek-pii-redactor.exe restore reply.txt --mapping letter.txt.mapping.json
+.\.venv\Scripts\greek-pii-redactor.exe restore reply.txt --mapping letter.txt.mapping.json --names-dir C:\Users\you\weights\names
 ```
 
-`--model-dir` needs the `train` extra (torch, transformers). Without it only IDs are replaced. The mapping file holds the original personal data, so treat it like the original text.
+`--model-dir` needs the `train` extra (torch, transformers). Without it only IDs are replaced. `--names-dir` takes the name forms built by `train/train_inflection.py` and needs the `names` extra (scikit-learn); without it restore uses the rules in `inflect.py`. Its `models.joblib` is a pickle, which can run code when loaded, so only pass a names dir you built yourself. The mapping file holds the original personal data, so treat it like the original text.
 
 ## Proxy
 
 `serve` runs a local server that speaks the OpenAI chat completions API. Point a client at it instead of the provider: it redacts every message, forwards the request to `--upstream`, and restores the reply.
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[serve,train]"
-.\.venv\Scripts\greek-pii-redactor.exe serve --upstream http://localhost:11434/v1 --model-dir C:\Users\you\weights\xlmr-person
+.\.venv\Scripts\python.exe -m pip install -e ".[serve,train,names]"
+.\.venv\Scripts\greek-pii-redactor.exe serve --upstream http://localhost:11434/v1 --model-dir C:\Users\you\weights\xlmr-person --names-dir C:\Users\you\weights\names
 ```
 
-It listens on `http://127.0.0.1:8080/v1` and passes the `Authorization` header on to the upstream. It doesn't log requests or replies.
+It listens on `http://127.0.0.1:8080/v1` and passes the `Authorization` header on to the upstream. It doesn't log requests or replies. With `--names-dir`, replies are restored with the name forms from `train/train_inflection.py`, as in the `restore` command.
 
 What it refuses with a 400, without forwarding anything:
 

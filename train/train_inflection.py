@@ -8,13 +8,13 @@ classifier is not asked about them.
 Setup: pip install -e ".[names]", then eval/download_names.py.
 Run (the output directory must be outside the repo, nothing from it is committed):
     python train/train_inflection.py --out C:/Users/me/greek-pii-redactor-weights/names
---holdout 0.1 keeps a tenth of the names out of training, in holdout.jsonl, for
+--holdout 0.1 keeps about a tenth of the names out of training, in holdout.jsonl, for
 eval/names_classifier.py. --holdout 0 trains on all names and leaves holdout.jsonl empty.
 """
 
 import argparse
+import hashlib
 import json
-import random
 import time
 from pathlib import Path
 
@@ -27,6 +27,7 @@ from greek_pii_redactor.inflect import CASES
 from greek_pii_redactor.names import (
     LEXICON_FILE,
     MODELS_FILE,
+    OWNER_NAMES,
     derive_edit,
     features,
     is_female_surname,
@@ -35,6 +36,7 @@ from greek_pii_redactor.names import (
 
 HOLDOUT_FILE = "holdout.jsonl"
 DIRECTIONS = ("forward", "reverse")  # nominative to a case form, and back
+HASH_BYTES = 8  # 64 bits of the hash: a share far finer than any --holdout step
 
 
 def write_names(path: Path, names: list[dict]) -> None:
@@ -52,10 +54,17 @@ def main() -> None:
     args = parser.parse_args()
 
     names = list(read_names(args.names))
-    # All roles of a word go to the same side, so a held-out word is unseen in any role.
-    words = sorted({name["word"] for name in names})
-    random.Random(args.seed).shuffle(words)
-    held_out = set(words[: round(args.holdout * len(words))])
+    # All roles of a word go to the same side, so a held-out word is unseen in any role. The
+    # owner's names are always trained on. Each word's side comes from a hash of the seed and the
+    # word, not from a shuffle of the list, so adding an owner row moves no other word.
+    words = {name["word"] for name in names} - {name["word"] for name in OWNER_NAMES}
+    held_out = {
+        word
+        for word in words
+        if int.from_bytes(hashlib.sha256(f"{args.seed}:{word}".encode()).digest()[:HASH_BYTES])
+        / 2 ** (8 * HASH_BYTES)
+        < args.holdout
+    }
     training = [name for name in names if name["word"] not in held_out]
     args.out.mkdir(parents=True, exist_ok=True)
     write_names(args.out / LEXICON_FILE, training)

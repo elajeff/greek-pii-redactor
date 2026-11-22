@@ -5,7 +5,10 @@ Output is one JSON object per line and per (word, role, gender):
 "first" or "surname", gender "M" or "F", each case the singular forms Wiktionary gives, sorted.
 The extract lists a case's forms in table order with no mark of which one is preferred. A female
 surname marked indeclinable counts as a table where every case is the name itself.
-A table form that is not one word in modern Greek script is dropped and counted.
+A table form that is not one word in modern Greek script is dropped and counted, and so is one
+with more or fewer accents than the name (Μηλιά, genitive Μηλιας). An entry whose table has a
+singular nominative other than the word is skipped and counted: the table is another word's
+(Καλλιόπη filed with the table of Καλλιόπα).
 
 Source: the kaikki.org extract of el.wiktionary (EXTRACT_URL), downloaded to --cache if the file
 is missing. Wiktionary text is CC BY-SA 4.0.
@@ -22,6 +25,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from greek_pii_redactor.inflect import CASES
+from greek_pii_redactor.names import tonos_count
 
 EXTRACT_URL = "https://kaikki.org/dictionary/downloads/el/el-extract.jsonl.gz"
 ROLE_CATEGORIES = {
@@ -73,6 +77,7 @@ def read_tables(cache: Path, skipped: Counter) -> dict[tuple[str, str, str], dic
                 skipped["not one word in Greek script"] += 1
                 continue
             cases: dict[str, set[str]] = {case: set() for case in CASES}
+            nominatives = set()
             invariable = INDECLINABLE_CATEGORY in categories
             # 38 entries have no forms and 1546 forms have no tags.
             for form in entry.get("forms") or []:
@@ -85,8 +90,16 @@ def read_tables(cache: Path, skipped: Counter) -> dict[tuple[str, str, str], dic
                     ):
                         skipped["table form missing or not one word in Greek script"] += 1
                         continue
+                    if "nominative" in tags:
+                        nominatives.add(form["form"])
+                    if tonos_count(form["form"]) != tonos_count(word):
+                        skipped["table form with a different number of accents"] += 1
+                        continue
                     for case in set(tags) & set(CASES):
                         cases[case].add(form["form"])
+            if nominatives and word not in nominatives:
+                skipped["entry with the table of another word"] += 1
+                continue
             for role, gender in sorted(roles):
                 if any(cases.values()):
                     found = cases

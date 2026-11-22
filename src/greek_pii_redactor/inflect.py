@@ -170,21 +170,32 @@ def inflect_female_first(token: str, case: str) -> str:
     return token
 
 
+def inflection_roles(tokens: list[str], gender: str, surname_only: bool) -> list[str]:
+    """The role of each token of a nominative name, "first" or "surname". A lone female token
+    counts as a surname, which never changes, unless its ending or the Faker lists mark it as a
+    first name."""
+    roles = []
+    for index, token in enumerate(tokens):
+        first_name = index == 0 and not surname_only
+        if gender == "F" and first_name and len(tokens) == 1:
+            first_name = (
+                token.endswith(LONE_FEMALE_FIRST_ENDINGS)
+                or strip_accents(token).lower() in lone_female_first_names()
+            )
+        roles.append("first" if first_name else "surname")
+    return roles
+
+
 def inflect_name(name: str, gender: str, case: str, surname_only: bool) -> str:
     """name is nominative, gender "M" or "F". surname_only: a lone surname after a title."""
     if case == "nominative":
         return name
     tokens = name.split()
     inflected = []
-    for index, token in enumerate(tokens):
-        first_name = index == 0 and not surname_only
+    for token, role in zip(tokens, inflection_roles(tokens, gender, surname_only), strict=True):
         if gender == "M":
-            inflected.append(inflect_male(token, case, first_name))
-        elif first_name and (
-            len(tokens) > 1
-            or token.endswith(LONE_FEMALE_FIRST_ENDINGS)
-            or strip_accents(token).lower() in lone_female_first_names()
-        ):
+            inflected.append(inflect_male(token, case, role == "first"))
+        elif role == "first":
             inflected.append(inflect_female_first(token, case))
         else:
             inflected.append(token)

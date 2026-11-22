@@ -3,6 +3,7 @@ from collections.abc import Callable
 
 import pytest
 
+from greek_pii_redactor.names import Names
 from greek_pii_redactor.redact import redact, restore
 from greek_pii_redactor.rules import Span
 
@@ -264,6 +265,66 @@ def test_restore_treats_a_lone_name_after_a_title_as_a_surname(
 ) -> None:
     _, placeholders = redact(text, find_names(name))
     assert restore(reply, placeholders) == expected
+
+
+@pytest.mark.parametrize(
+    "text, name, reply, expected",
+    [
+        # The rules give Κρέωνα.
+        ("Ο Κρέων ήρθε.", "Κρέων", "Είδα τον [PERSON_1].", "Είδα τον Κρέοντα."),
+        # The rules can't read a nominative from -ονος.
+        ("Το σπίτι του Αγαμέμνονος.", "Αγαμέμνονος", "Ο [PERSON_1] ήρθε.", "Ο Αγαμέμνων ήρθε."),
+        ("Ο κρέων ήρθε.", "κρέων", "Είδα τον [PERSON_1].", "Είδα τον κρέοντα."),
+        # Faker lists Σακελλαρίου as a surname, so it is not read as the genitive of Σακελλάριος.
+        (
+            "Το σπίτι του κυρίου Σακελλαρίου.",
+            "Σακελλαρίου",
+            "Ο κύριος [PERSON_1] ήρθε.",
+            "Ο κύριος Σακελλαρίου ήρθε.",
+        ),
+        # Not in the lexicon: the rules' Γιαννακέας is a Faker surname, so no classifier is needed.
+        (
+            "Καλημέρα, κύριε Γιαννακέα.",
+            "Γιαννακέα",
+            "Ο κύριος [PERSON_1] ήρθε.",
+            "Ο κύριος Γιαννακέας ήρθε.",
+        ),
+    ],
+)
+def test_restore_takes_the_forms_from_the_names_lexicon(
+    text: str, name: str, reply: str, expected: str
+) -> None:
+    names = Names(
+        [
+            {
+                "word": "Κρέων",
+                "role": "first",
+                "gender": "M",
+                "genitive": ["Κρέοντος"],
+                "accusative": ["Κρέοντα"],
+                "vocative": ["Κρέων"],
+            },
+            {
+                "word": "Αγαμέμνων",
+                "role": "first",
+                "gender": "M",
+                "genitive": ["Αγαμέμνονος"],
+                "accusative": ["Αγαμέμνονα"],
+                "vocative": ["Αγαμέμνον"],
+            },
+            {
+                "word": "Σακελλάριος",
+                "role": "surname",
+                "gender": "M",
+                "genitive": ["Σακελλάριου", "Σακελλαρίου"],
+                "accusative": ["Σακελλάριο"],
+                "vocative": ["Σακελλάριε"],
+            },
+        ],
+        models={},
+    )
+    _, placeholders = redact(text, find_names(name))
+    assert restore(reply, placeholders, names) == expected
 
 
 def test_restore_when_the_reply_dropped_or_invented_placeholders() -> None:
