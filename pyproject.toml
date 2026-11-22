@@ -8,13 +8,14 @@ requires-python = ">=3.13"
 dependencies = ["Faker==40.54.0"]
 
 [project.optional-dependencies]
-dev = ["pytest==9.2.0", "ruff==0.17.6", "greek-pii-redactor[serve]"]
+dev = ["pytest==9.2.0", "ruff==0.17.6", "greek-pii-redactor[serve,names]"]
 eval = [
     "presidio-analyzer==2.2.366",
     "pyarrow==26.0.1",
     "spacy==3.8.18",
 ]
 train = ["torch==2.15.0", "transformers==5.23.0"]
+names = ["scikit-learn==1.9.1"]
 serve = ["fastapi==0.165.0", "httpx==0.28.1", "uvicorn==0.54.0"]
 
 [project.scripts]
