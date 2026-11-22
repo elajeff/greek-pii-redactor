@@ -56,7 +56,17 @@ ARTICLES = {
     ("F", "accusative"): "την",
 }
 
-# The accusative article keeps its -ν (την, τον) even before consonants, as written text does.
+# Written Greek keeps the -ν of the feminine accusative article only before a vowel, κ π τ ξ ψ
+# or μπ ντ γκ τσ τζ; before other consonants it is «τη». «τον» always keeps it, or it reads as «το».
+KEEPS_FINAL_N = re.compile(r"[αεηιουωάέήίόύώϊϋΐΰκπτξψ]|μπ|ντ|γκ|τσ|τζ", re.IGNORECASE)
+
+
+def article(gender: str, case: str, next_word: str) -> str:
+    if (gender, case) == ("F", "accusative") and not KEEPS_FINAL_N.match(next_word):
+        return "τη"
+    return ARTICLES[gender, case]
+
+
 # Placeholders: {PERSON:case} for Greek (adds the article), {PERSON} for English, {AFM} etc.
 # {FIRST:vocative} and {SURNAME:vocative} are the first name or surname alone, {ADDRESS} is
 # "Αγαπητέ κύριε" or "Αγαπητή κυρία" by the person's gender.
@@ -262,9 +272,9 @@ def make_record(rng: random.Random, split: str) -> dict:
             text += ADDRESS_FORMS[person.gender]
             continue
         if kind == "PERSON":
-            if greek and case != "vocative":
-                text += ARTICLES[person.gender, case] + " "
             surface = person.name(case or "nominative")
+            if greek and case != "vocative":
+                text += article(person.gender, case, surface) + " "
         elif kind == "FIRST":
             surface = person.first_form(case)
         elif kind == "SURNAME":
