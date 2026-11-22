@@ -29,8 +29,14 @@ without accents whose form by the rules is the one seen: «του Ανδρονί
 not Ανδρονίκος.
 
 Limit: with a names dir, a surname in -ός that is not in the lexicon, where its -ούς twin is, has
-its genitive -ού read back as the twin. With the --holdout 0.1 --seed 7 build, Γεωργού gives
-Γεωργούς; the --holdout 0 build lists both, so the rules' Γεωργός is used.
+its genitive -ού read back as the twin. With the --holdout 0.1 --seed 7 build, Ντουρουντού gives
+Ντουρουντούς; the --holdout 0 build lists both, so the rules' Ντουρουντός is used.
+
+Limit: with a names dir, a male surname in -ου that neither the lexicon nor Faker knows, and that
+the rules cannot read back, can be given a misspelt nominative by the classifier when it is at
+least READ_BACK_THRESHOLD sure. With the --holdout 0.1 --seed 7 build, «του κυρίου
+Χατζηκοκκίνου» gives «Ο κύριος Χατζηκοκκίνος»; the --holdout 0 build lists the name, so it gives
+«Ο κύριος Χατζηκόκκινος».
 
 Limit: two forms of one person with no article before them (a bare nominative and a bare genitive)
 cannot be told apart in the reply, so restore(redacted text) may not give the input back exactly.

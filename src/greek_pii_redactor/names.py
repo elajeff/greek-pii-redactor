@@ -49,8 +49,8 @@ ROUND_TRIP_FORMS = 2
 # eval/names_classifier.py with the most held-out names (one per case) whose form is in their
 # Wiktionary set, where no role, gender and case has fewer than the rules alone. On a tie the
 # highest: the classifier's less sure answers add nothing there, and they can be near-ties on
-# endings it has few names for (Κίμων: Κίμων 0.26, Κίμωνα 0.26).
-FORWARD_THRESHOLD = 0.6
+# endings it has few names for (full build, Κίμων accusative: Κίμωνα 0.26, Κίμων 0.24).
+FORWARD_THRESHOLD = 0.7
 # Below this probability the rules read a form back instead of the classifier: the lowest threshold
 # in eval/names_classifier.py where the classifier's wrong read-backs are no more than the rules' in
 # every role, gender and case.
@@ -70,13 +70,59 @@ OWNER_FORMS = {
     ("Ανδρόνικος", "first", "M"): {"vocative": ["Ανδρόνικε"]},
     ("Φόρος", "first", "M"): {"vocative": ["Φόρε", "Φόρο"]},
 }
-# The owner's call: modern Greek inflects these names from their accusative, like γέρων, γέροντας,
-# whose Wiktionary table (and άρχοντας') gives -οντα for the genitive, accusative and vocative.
-# Wiktionary has none of these names.
-OWNER_NAMES = [
+# The owner's call: modern Greek inflects the -οντα names from their accusative, like γέρων,
+# γέροντας, whose Wiktionary table (and άρχοντας') gives -οντα for the genitive, accusative and
+# vocative. Wiktionary has none of these names. Φιλήμων is the owner's call too (2026-11-22): its
+# Ancient Greek Wiktionary entry gives the genitive -ονος with no table, jw.org writes the
+# accusative Φιλήμονα, and Παντελεήμων's table gives the vocative -ον.
+OWNER_FIRST_NAMES = [
     {"word": word, "role": "first", "gender": "M"} | {case: [stem + "οντα"] for case in CASES}
     for stem in ("Κρέ", "Λέ", "Δράκ", "Τιμολέ", "Ναπολέ")
     for word in (stem + "ων", stem + "οντας")
+] + [
+    {
+        "word": "Φιλήμων",
+        "role": "first",
+        "gender": "M",
+        "genitive": ["Φιλήμονος"],
+        "accusative": ["Φιλήμονα"],
+        "vocative": ["Φιλήμον"],
+    }
+]
+# The owner's calls (2026-11-22) on the vocative of Faker male surnames in paroxytone -ος that
+# Wiktionary has no table for. Φαλιέρος, Χέλιος and Κατσίφος have the rules' -ε: no use of either
+# vocative was found for any of them. The genitive and accusative are stem+ου and stem+ο, as
+# Wiktionary gives them for nearly all paroxytone male surnames in -ος.
+OWNER_SURNAME_VOCATIVES = {
+    "Ότσος": ["Ότσο"], "Βούλκος": ["Βούλκο"], "Βώσσος": ["Βώσσο"], "Γεροδήμος": ["Γεροδήμο"],
+    "Γιαννέλος": ["Γιαννέλο"], "Γκανάτσιος": ["Γκανάτσιο"], "Γκούσκος": ["Γκούσκο"],
+    "Γούσιος": ["Γούσιο"], "Δέλιος": ["Δέλιο"], "Ζιώγος": ["Ζιώγο"], "Ζώνιος": ["Ζώνιο"],
+    "Ζώτος": ["Ζώτο"], "Θεολόγος": ["Θεολόγε"], "Θηβαίος": ["Θηβαίε"], "Κακοσαίος": ["Κακοσαίε"],
+    "Καλιάμπος": ["Καλιάμπε"], "Καπετάνιος": ["Καπετάνιε", "Καπετάνιο"], "Καραδήμος": ["Καραδήμο"],
+    "Καραμάνος": ["Καραμάνε", "Καραμάνο"], "Καρατζίκος": ["Καρατζίκο"], "Καρούντζος": ["Καρούντζο"],
+    "Καρούσος": ["Καρούσο"], "Κατσίφος": ["Κατσίφε"], "Κουλίζος": ["Κουλίζο"],
+    "Κυπραίος": ["Κυπραίε", "Κυπραίο"], "Λάτσκος": ["Λάτσκο"], "Λώλος": ["Λώλο"],
+    "Μάνδρος": ["Μάνδρε"], "Μάνος": ["Μάνο"], "Μίσχος": ["Μίσχο"],
+    "Μαντζώρος": ["Μαντζώρε", "Μαντζώρο"], "Μαυρούτσος": ["Μαυρούτσο"], "Μπέκος": ["Μπέκο"],
+    "Μπούσιος": ["Μπούσιο"], "Νάστος": ["Νάστο"], "Νέλος": ["Νέλο"], "Ντόκος": ["Ντόκο"],
+    "Πάνος": ["Πάνο"], "Πίσσιος": ["Πίσσιο"], "Παντζέκος": ["Παντζέκο"], "Πιάγκος": ["Πιάγκο"],
+    "Πιπερίγκος": ["Πιπερίγκο"], "Πουλιέζος": ["Πουλιέζο"], "Ρέντζος": ["Ρέντζο"],
+    "Ρέππος": ["Ρέππο"], "Ρίγκος": ["Ρίγκο"], "Σαλίχος": ["Σαλίχο"], "Σεφέκος": ["Σεφέκο"],
+    "Στόγιος": ["Στόγιο"], "Τζιόρτζιος": ["Τζιόρτζιο"], "Τσάρκος": ["Τσάρκο"],
+    "Τσέλλος": ["Τσέλλο"], "Τσεντούρος": ["Τσεντούρο"], "Τσομώκος": ["Τσομώκο"],
+    "Τσούμος": ["Τσούμο"], "Φαλιέρος": ["Φαλιέρε"], "Χέλιος": ["Χέλιε"],
+    "Χατζηκύρκος": ["Χατζηκύρκο"],
+}
+OWNER_NAMES = OWNER_FIRST_NAMES + [
+    {
+        "word": word,
+        "role": "surname",
+        "gender": "M",
+        "genitive": [word[:-2] + "ου"],
+        "accusative": [word[:-2] + "ο"],
+        "vocative": vocatives,
+    }
+    for word, vocatives in OWNER_SURNAME_VOCATIVES.items()
 ]
 
 
