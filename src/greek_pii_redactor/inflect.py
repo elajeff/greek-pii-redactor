@@ -92,7 +92,7 @@ def syllables(word: str, first_name: bool) -> list[tuple[int, int]]:
         joins_next = (
             word[i] == "ι"
             and i != learned_start
-            and 0 < i
+            and i > 0
             and word[i - 1].isalpha()
             and word[i - 1] not in VOWELS
             and word[i + 1 : i + 2] in VOWELS
@@ -101,10 +101,11 @@ def syllables(word: str, first_name: bool) -> list[tuple[int, int]]:
             i += 1
             continue
         pair = word[i : i + 2]
-        if len(pair) == 2 and word[i].lower() + strip_accents(pair[1]).lower() in DIPHTHONGS:
-            joined = pair[1] not in DIAERESIS
-        else:
-            joined = False
+        joined = (
+            len(pair) == 2
+            and word[i].lower() + strip_accents(pair[1]).lower() in DIPHTHONGS
+            and pair[1] not in DIAERESIS
+        )
         spans.append((i, i + 1 + joined))
         i += 1 + joined
     return spans
@@ -202,33 +203,39 @@ def inflect_name(name: str, gender: str, case: str, surname_only: bool) -> str:
     return " ".join(inflected)
 
 
+def male_genitive_nominative(token: str, first_name: bool) -> str | None:
+    # The order matters: -πούλου and -όπουλου before -ου, -αίου before -ίου.
+    if token.endswith("πούλου"):
+        return accent_third_from_end(token[: -len("πούλου")] + "πουλος", first_name)
+    if token.endswith("όπουλου"):
+        return token[:-2] + "ος"
+    if token.endswith("ου"):
+        if not first_name:
+            return None
+        if token.endswith("αίου"):
+            return token[:-2] + "ος"  # Ματθαίος is already accented on the αί
+        if token.endswith("ίου"):
+            return accent_third_from_end(token[:-3] + "ιος", first_name)
+        return token[:-2] + "ος" if len(syllables(token, first_name)) == 2 else None
+    if token.endswith("ού"):
+        return token[:-2] + "ός"  # -ός names far outnumber -ούς (Παππού reads as Παππός)
+    if token.endswith("ωνος"):
+        return token[:-2]
+    if token.endswith("έως"):
+        return token[:-3] + "εύς"
+    if token.endswith(("η", "ή", "α", "ά", "ι", "ε", "έ")):
+        return token + "ς"
+    return None
+
+
 def male_nominative(token: str, case: str, first_name: bool) -> str | None:
-    if case == "nominative":
-        return token
+    """case is genitive, accusative or vocative."""
     if case == "genitive":
-        if token.endswith("πούλου"):
-            return accent_third_from_end(token[: -len("πούλου")] + "πουλος", first_name)
-        if token.endswith("όπουλου"):
-            return token[:-2] + "ος"
-        if token.endswith("ου"):
-            if not first_name:
-                return None
-            if token.endswith("αίου"):
-                return token[:-2] + "ος"  # Ματθαίος is already accented on the αί
-            if token.endswith("ίου"):
-                return accent_third_from_end(token[:-3] + "ιος", first_name)
-            return token[:-2] + "ος" if len(syllables(token, first_name)) == 2 else None
-        if token.endswith("ού"):
-            return token[:-2] + "ός"  # -ός names far outnumber -ούς (Παππού reads as Παππός)
-        if token.endswith("ωνος"):
-            return token[:-2]
-        if token.endswith("έως"):
-            return token[:-3] + "εύς"
-    else:
-        if token.endswith("ου") and not first_name:
-            return token
-        if case == "accusative" and token.endswith("ωνα"):
-            return token[:-1]
+        return male_genitive_nominative(token, first_name)
+    if token.endswith("ου") and not first_name:
+        return token
+    if case == "accusative" and token.endswith("ωνα"):
+        return token[:-1]
     if token.endswith(("η", "ή", "α", "ά")):
         return token + "ς"
     if case == "accusative" and token.endswith(("ο", "ό")):
@@ -309,7 +316,7 @@ def needs_accent(token: str) -> bool:
 
 def is_listed(token: str) -> bool:
     """Whether the token, or the last part of a hyphenated one, is a name in the Faker lists."""
-    return strip_accents(token.split("-")[-1]).lower() in accents_by_plain_form()
+    return strip_accents(token.rsplit("-", 1)[-1]).lower() in accents_by_plain_form()
 
 
 def accent_candidates(token: str) -> list[str]:
@@ -334,7 +341,7 @@ def accent_candidates(token: str) -> list[str]:
 def accent_on_second_to_last(token: str) -> bool:
     """Whether the accent is on the second to last syllable of the token, or of the last part of
     a hyphenated one."""
-    last_part = token.split("-")[-1]
+    last_part = token.rsplit("-", 1)[-1]
     spans = syllables(last_part, False)
     return accented_syllables(last_part, spans) == [len(spans) - 2]
 
@@ -353,8 +360,8 @@ def drop_tonos_and_unseen_diaeresis(written: str, seen: str) -> str:
 
 
 def gender_of(nominative_name: str) -> str | None:
-    """From the first token alone: any name in Greek script ending in -ς is "M". -ου (male and
-    female surnames) and Latin-script names give None."""
+    """From the first token alone: "M" if it ends in -ς or -ων, "F" if it ends in -α, -ά, -η, -ή,
+    -ω or -ώ, None for any other ending (-ου, a capital Σ, Latin script)."""
     first = nominative_name.split()[0]
     if first.endswith(("ς", "ων")):
         return "M"
