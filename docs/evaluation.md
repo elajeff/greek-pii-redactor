@@ -49,14 +49,14 @@ The script prints the same table for the 485 English sentences. Presidio runs th
 
 ## Speed
 
-Wall time for the 2000 WikiANN sentences, one run each, from the same `eval/evaluate.py` output. The CPU row is the same command with `CUDA_VISIBLE_DEVICES=-1` and without the LLM.
+Wall time for the 2000 WikiANN sentences, average of three runs of `eval/evaluate.py --model-dir <tagger>`. The CPU row is the same command with `CUDA_VISIBLE_DEVICES=-1`. The LLM's time is the one run with `--ollama-model` (4260.2 s); I didn't repeat it.
 
 | | Rules only | Presidio + spaCy el | qwen3:4b-instruct | XLM-R tagger |
 | --- | --- | --- | --- | --- |
-| GPU | 0.0 s | 21.4 s | 4260.2 s | 22.1 s |
-| CPU | 0.0 s | 7.0 s | not run | 59.4 s |
+| GPU | 0.0 s | 7.9 s | 4260.2 s | 13.5 s |
+| CPU | 0.0 s | 9.0 s | not run | 74.0 s |
 
-Presidio and spaCy run on the CPU in both rows, so the gap between 7.0 and 21.4 s doesn't come from the GPU. I haven't found what caused it, so take every time here as rough.
+The single runs behind the averages: Presidio 8.2, 7.7, 7.7 s on the GPU and 8.2, 8.5, 10.3 s on the CPU; the tagger 10.1, 20.7, 9.7 s on the GPU and 75.6, 77.0, 69.5 s on the CPU. Presidio and spaCy run on the CPU in both rows, so the GPU and CPU rows differ for it only by run-to-run noise. One tagger run on the GPU took twice as long as the other two and I haven't found why, so take the times as rough.
 
 ## Repeatability
 
