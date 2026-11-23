@@ -1,6 +1,6 @@
 [project]
 name = "greek-pii-redactor"
-version = "0.1.0"
+version = "0.1.1"
 description = "Redacts personal data from Greek and English text before an LLM call and restores it in the reply"
 readme = "README.md"
 license = "MIT"
