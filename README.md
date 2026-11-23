@@ -6,18 +6,28 @@ Built with Python 3.13, PyTorch and Hugging Face Transformers (a fine-tuned XLM-
 
 ## How it compares
 
-On Greek text: the 1515 Greek sentences of my synthetic test file and 2000 sentences of the WikiANN `el` test split. Names are scored by F1 on exact spans. IDs are the ΑΦΜ, ΑΜΚΑ, IBAN, phone numbers and emails in the synthetic sentences.
+I ran four detectors on Greek text only: the rules alone, Presidio with the Greek spaCy model, a small local LLM (qwen3:4b-instruct through Ollama), and my tagger. The text is the 1515 Greek sentences of my synthetic test file (1515 names, 502 ΑΦΜ and ΑΜΚΑ numbers) and 2000 real sentences from WikiANN `el` (894 names). A name counts as found only when the detector marks exactly the right span.
 
-| | Names, synthetic (1515) | Names, WikiANN (894) | IDs found (2017) | Time for 2000 WikiANN sentences |
-| --- | --- | --- | --- | --- |
-| Rules only (`rules.py`) | finds none | finds none | 2017 | under 0.1 s |
-| Presidio + spaCy `el_core_news_lg` | 0.818 | 0.644 | 1323, no ΑΦΜ or ΑΜΚΑ | 7 to 21 s |
-| qwen3:4b-instruct through Ollama, plus the rules | 0.922 | 0.637 | 2017 | 71 min |
-| XLM-R tagger, plus the rules | 0.994 | 0.920 | 2017 | 22 s on the GPU, 59 s on the CPU |
+| | Names found, synthetic | Names found, WikiANN | Wrong name hits, WikiANN | ΑΦΜ and ΑΜΚΑ found | Time for 2000 WikiANN sentences |
+| --- | --- | --- | --- | --- | --- |
+| Rules only | 0 of 1515 | 0 of 894 | 0 | 502 of 502 | under 0.1 s |
+| Presidio + spaCy `el_core_news_lg` | 1058 (70%) | 580 (65%) | 328 | 0 of 502 | 7 to 21 s |
+| qwen3:4b-instruct + rules | 1317 (87%) | 561 (63%) | 306 | 502 of 502 | 71 min |
+| **XLM-R tagger + rules** | **1496 (99%)** | **833 (93%)** | **83** | 502 of 502 | 22 s on the GPU, 59 s on the CPU |
 
-The tagger is better than Presidio and qwen3:4b-instruct at finding Greek names: on WikiANN it finds 833 of the 894 names, against 580 for Presidio and 561 for the LLM, with 83 wrong hits against their 328 and 306. It does the 2000 sentences in 22 s, where the LLM needs 71 minutes on the same GPU. With the rules it also finds every ΑΦΜ and ΑΜΚΑ in the test file, and Presidio finds none.
+What I take from it:
 
-The accuracy numbers come from one run of `eval/evaluate.py` on my machine (RTX 5070) and the CPU time from a second run without the LLM, with the seeds and commands in [docs/evaluation.md](docs/evaluation.md). The tagger was trained on sentences from the same generator as the synthetic test file (other names and templates), so that column is its best case. The test IDs use the formats the rules look for, so the rules' full score says they match those formats, not how they do on IDs typed by people.
+- **Names:** the tagger finds the most names in both sets and makes the fewest wrong hits. On real WikiANN text it finds 93% of the names. Presidio finds 65% and the LLM 63%, each with about four times as many wrong hits.
+- **Speed:** the tagger does 2000 sentences in 22 s. The LLM needs 71 minutes on the same GPU.
+- **IDs:** Presidio finds none of the ΑΦΜ or ΑΜΚΑ numbers. The rules find all of them by checking the check digit. Presidio also misses a quarter of the phone numbers.
+
+What the table doesn't show:
+
+- The synthetic column is the tagger's best case. It trained on sentences from the same generator, with other names and templates. WikiANN is the fairer test.
+- The test IDs use the formats the rules look for, so their full score says they match those formats, not how they do on IDs typed by people.
+- Presidio's time was 7 s in one run and 21 s in another, and I haven't found why. Treat every time as rough.
+
+The numbers come from `eval/evaluate.py` on my machine (RTX 5070), plus a second run without the LLM for the CPU time. Precision, recall, F1 and the commands are in [docs/evaluation.md](docs/evaluation.md).
 
 ## What it does
 
