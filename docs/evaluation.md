@@ -64,7 +64,7 @@ The tagger gave the same counts on the GPU and on the CPU, and so did the rules 
 
 ## Test data and licences
 
-`eval/make_synthetic.py` writes invented Greek and English sentences with labelled names and IDs, about three quarters of them Greek. The same seed gives the same file, and train and test use different names and sentence templates. `eval/download_ner.py` downloads real Greek text with person labels into `data/`, and `eval/download_names.py` the Wiktionary case tables of Greek names. Nothing from these datasets is stored in the repo, and no weights are either.
+`eval/make_synthetic.py` writes invented Greek and English sentences with labelled names and IDs, about three quarters of them Greek. The same seed gives the same file, and train and test use different names and sentence templates. `eval/download_ner.py` downloads real Greek text with person labels into `data/`, and `eval/download_names.py` the Wiktionary case tables of Greek names. Nothing from these datasets is stored in the repo, and the weights are on Hugging Face, not in the repo.
 
 | Data or model | Used for | Licence on its own page |
 | --- | --- | --- |
@@ -72,6 +72,7 @@ The tagger gave the same counts on the GPU and on the CPU, and so did the rules 
 | [joelniklaus/greek_legal_ner](https://huggingface.co/datasets/joelniklaus/greek_legal_ner) | testing the tagger (`eval/tagger_errors.py`) | CC BY-NC-SA 4.0 |
 | Greek Wiktionary, through the [kaikki.org](https://kaikki.org/elwiktionary/rawdata.html) extract | the name forms in `--names-dir`, and checking the inflection rules | Wiktionary text is CC BY-SA 4.0; the kaikki.org page names no other licence |
 | [FacebookAI/xlm-roberta-base](https://huggingface.co/FacebookAI/xlm-roberta-base) | base model of the tagger | MIT |
+| [elajeff/greek-pii-redactor-ner](https://huggingface.co/elajeff/greek-pii-redactor-ner) | the published tagger | MIT, set by me; its WikiANN training data has no known licence |
 | [el_core_news_lg](https://spacy.io/models/el#el_core_news_lg) | the Presidio baseline | CC BY-NC-SA 3.0 |
 | [qwen3:4b-instruct](https://ollama.com/library/qwen3) | the LLM baseline and placeholder survival | Apache 2.0 |
 
