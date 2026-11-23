@@ -26,7 +26,7 @@ from make_synthetic import Person, article, first_names, surnames
 
 from greek_pii_redactor.inflect import inflect_name
 from greek_pii_redactor.redact import (
-    ARTICLE_CASES,
+    ARTICLES,
     PLACEHOLDER_PATTERN,
     derive_form,
     read_context,
@@ -55,6 +55,7 @@ FRAMES = {  # sentence around a name, so each input case is natural Greek
 }
 LONE_SURNAME_SHARE = 0.5  # the other mentions are a full name
 MENTION_SEPARATOR = " ; "  # never inside a name, so the restored reply splits back into mentions
+ARTICLE_CASES = {word: case for word, (case, _) in ARTICLES.items()}
 
 
 def restore_seen_forms_only(reply: str, placeholders: dict[str, list[dict[str, str]]]) -> str:
@@ -142,8 +143,8 @@ def main() -> None:
             counts[1] += old_text != wanted
             counts[2] += new_text != wanted
             forms = placeholders[f"[PERSON_{number}]"]
-            seen_cases = {read_context(form["article"])[0] for form in forms}
-            _, gender, _ = read_context(word_before(start, len(start)))
+            seen_cases = {read_context(form["article"]).case for form in forms}
+            gender = read_context(word_before(start, len(start))).gender
             if (
                 reply_case not in seen_cases
                 and derive_form(forms, reply_case, gender, None) is None

@@ -1,6 +1,6 @@
 """Greek name inflection: a nominative name into genitive, accusative or vocative, and back.
 
-Case names match redact.ARTICLE_CASES: "nominative", "genitive", "accusative", "vocative".
+Case names match redact.ARTICLES: "nominative", "genitive", "accusative", "vocative".
 In a full name the first token is the first name and later tokens are surnames. A single token is
 a first name, except after a title (surname_only=True).
 
