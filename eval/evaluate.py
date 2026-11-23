@@ -2,7 +2,9 @@
 
 Detectors: "rules only" (find_ids from rules.py) and "Presidio + spaCy el" (Presidio's built-in
 recognizers on top of the Greek spaCy model). With --model-dir, also "XLM-R tagger + rules": the
-rules for IDs plus the fine-tuned PERSON tagger.
+rules for IDs plus the fine-tuned PERSON tagger. With --ollama-model, also "LLM + rules": the rules
+for IDs plus the names a local model lists when asked through Ollama; every occurrence of a listed
+name in the text is a PERSON span, and listed names that are not in the text are counted.
 
 Setup: pip install -e ".[eval]" and then
     python -m spacy download el_core_news_lg
@@ -10,6 +12,10 @@ The model is not on PyPI. Its licence is CC BY-NC-SA 3.0, non-commercial use onl
 For the tagger: pip install -e ".[train]", train it (needs a CUDA GPU) with
     python train/train_tagger.py --out <weights dir outside the repo>
 and pass the same directory as --model-dir.
+For the LLM row: install Ollama, run
+    ollama pull qwen3:4b-instruct
+and pass --ollama-model qwen3:4b-instruct. On an RTX 5070 that row took about 72 minutes per
+dataset.
 
 Data (in --data-dir, default data/), created by:
     python eval/make_synthetic.py --seed 7 --split test --count 2000
@@ -27,6 +33,7 @@ from pathlib import Path
 
 from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
 from presidio_analyzer.nlp_engine import NlpEngineProvider
+from survival import ask_model
 
 from greek_pii_redactor.rules import Span, find_ids
 
@@ -56,6 +63,13 @@ DATASETS = [
     ("wikiann_el_test.jsonl", ("PERSON",), "python eval/download_ner.py"),
 ]
 
+NAME_INSTRUCTION = (
+    "List every person's name that appears in the user's text, copied exactly as it is written "
+    "there, one per line. Only people, not places, organisations or works. "
+    "If there is none, reply with NONE."
+)
+LLM_SEED = 7  # any fixed value; even at temperature 0 reruns differ by a name or two
+
 Detector = Callable[[str], list[Span]]
 
 
@@ -81,6 +95,24 @@ def build_presidio() -> Detector:
         ]
 
     return detect
+
+
+def persons_in_reply(reply: str, text: str) -> tuple[list[Span], int]:
+    """Returns a PERSON span for every occurrence in text of each name line in the model's reply,
+    and the number of lines that do not occur in text."""
+    persons = []
+    not_in_text = 0
+    for line in reply.splitlines():
+        name = line.strip().lstrip("-*0123456789. ").strip()
+        if not name or name == "NONE":
+            continue
+        start = text.find(name)
+        if start == -1:
+            not_in_text += 1
+        while start != -1:
+            persons.append(Span(start, start + len(name), "PERSON"))
+            start = text.find(name, start + len(name))
+    return persons, not_in_text
 
 
 def load_records(data_dir: Path, file_name: str, command: str) -> list[dict]:
@@ -116,6 +148,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--model-dir", type=Path, help="weights from train/train_tagger.py")
+    parser.add_argument("--ollama-model", help="adds the LLM + rules row, e.g. qwen3:4b-instruct")
+    parser.add_argument("--ollama-url", default="http://localhost:11434")
     args = parser.parse_args()
     if args.model_dir and not args.model_dir.is_dir():
         raise SystemExit(f"{args.model_dir} not found. Train it with: python train/train_tagger.py")
@@ -131,6 +165,17 @@ def main() -> None:
 
         tag_persons = load_tagger(args.model_dir)
         detectors["XLM-R tagger + rules"] = lambda text: sorted(find_ids(text) + tag_persons(text))
+    if args.ollama_model:
+
+        def ask_for_persons(text: str) -> list[Span]:
+            nonlocal llm_names_not_in_text
+            reply = ask_model(args.ollama_url, args.ollama_model, LLM_SEED, NAME_INSTRUCTION, text)
+            persons, not_in_text = persons_in_reply(reply, text)
+            llm_names_not_in_text += not_in_text
+            return sorted(find_ids(text) + persons)
+
+        detectors["LLM + rules"] = ask_for_persons
+        print(f"LLM + rules: {args.ollama_model} at {args.ollama_url}, seed {LLM_SEED}")
 
     for file_name, kinds, records in datasets:
         heading = f"{file_name}: {len(records)} sentences"
@@ -140,6 +185,7 @@ def main() -> None:
         print(f"\n{heading}")
         print(f"{'detector':<21}{'kind':<8}{'TP':>7}{'FP':>7}{'FN':>7}{'precision':>11}{'recall':>9}")
         seconds = {}
+        llm_names_not_in_text = 0
         for name, detect in detectors.items():
             started = time.perf_counter()
             predictions = [
@@ -148,6 +194,8 @@ def main() -> None:
             ]
             seconds[name] = time.perf_counter() - started
             print_scores(name, records, predictions, kinds)
+        if args.ollama_model:
+            print(f"LLM names not in the text: {llm_names_not_in_text}")
         times = ", ".join(f"{name} {s:.1f}" for name, s in seconds.items())
         print(f"Wall time in seconds, single run on this machine, not a benchmark: {times}")
 

@@ -5,7 +5,8 @@ Takes a seeded sample of data/synthetic_test.jsonl (python eval/make_synthetic.p
 counts the placeholders still in the reply and the records whose originals come back through
 restore. The "restored" column covers all kinds: for the ID kinds the original string must appear
 as a whole word; for PERSON any form of the name seen in the input counts, not the exact case.
-The request uses temperature 0 and the --seed value, so a run can be repeated.
+The request uses temperature 0 and the --seed value, but Ollama's replies can still differ
+slightly from run to run.
 With --model-dir the PERSON tagger is used too; without it only IDs are redacted, so PERSON
 placeholders are absent from the numbers.
 
@@ -34,12 +35,12 @@ INSTRUCTION = (
 REQUEST_TIMEOUT_SECONDS = 120
 
 
-def ask_model(url: str, model: str, seed: int, message: str) -> str:
+def ask_model(url: str, model: str, seed: int, instruction: str, message: str) -> str:
     body = json.dumps(
         {
             "model": model,
             "messages": [
-                {"role": "system", "content": INSTRUCTION},
+                {"role": "system", "content": instruction},
                 {"role": "user", "content": message},
             ],
             "stream": False,
@@ -114,7 +115,7 @@ def main() -> None:
     for record in sample:
         redacted, placeholders = redact(record["text"], detect_names)
         round_trips += restore(redacted, placeholders) == record["text"]
-        reply = ask_model(args.url, args.model, args.seed, redacted)
+        reply = ask_model(args.url, args.model, args.seed, INSTRUCTION, redacted)
         restored = restore(reply, placeholders)
         for kind in KINDS:
             of_kind = {p: forms for p, forms in placeholders.items() if p.startswith(f"[{kind}_")}
