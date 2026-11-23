@@ -5,6 +5,7 @@ recognizers on top of the Greek spaCy model). With --model-dir, also "XLM-R tagg
 rules for IDs plus the fine-tuned PERSON tagger. With --ollama-model, also "LLM + rules": the rules
 for IDs plus the names a local model lists when asked through Ollama; every occurrence of a listed
 name in the text is a PERSON span, and listed names that are not in the text are counted.
+Presidio's phone region is set to GR (PHONE_REGIONS).
 
 Setup: pip install -e ".[eval]" and then
     python -m spacy download el_core_news_lg
@@ -22,7 +23,7 @@ Data (in --data-dir, default data/), created by:
     python eval/download_ner.py
 
 The real datasets only label PERSON, so only PERSON is scored on them. The synthetic sentences
-also get a PERSON table for the Greek ones and one for the English ones.
+also get a table of every kind for the Greek ones and one for the English ones.
 """
 
 import argparse
@@ -34,6 +35,7 @@ from pathlib import Path
 
 from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
 from presidio_analyzer.nlp_engine import NlpEngineProvider
+from presidio_analyzer.predefined_recognizers import PhoneRecognizer
 from survival import ask_model
 
 from greek_pii_redactor.rules import Span, find_ids
@@ -42,6 +44,8 @@ SAMPLE_SIZE = 2000  # keeps the Presidio runs short; the synthetic file is alrea
 SAMPLE_SEED = 7
 LANGUAGE = "el"
 SPACY_MODEL = "el_core_news_lg"
+# Presidio's default regions have no GR and read ΑΜΚΑ and ΑΦΜ as phone numbers.
+PHONE_REGIONS = ("GR",)
 ID_KINDS = ("AFM", "AMKA", "IBAN", "PHONE", "EMAIL")
 ALL_KINDS = ("PERSON", *ID_KINDS)
 LANGUAGE_NAMES = {"el": "Greek", "en": "English"}
@@ -88,6 +92,10 @@ def build_presidio() -> Detector:
     # The built-in recognizers are only registered for English unless asked for Greek.
     registry = RecognizerRegistry(supported_languages=[LANGUAGE])
     registry.load_predefined_recognizers(languages=[LANGUAGE], nlp_engine=nlp_engine)
+    registry.remove_recognizer("PhoneRecognizer", language=LANGUAGE)
+    registry.add_recognizer(
+        PhoneRecognizer(supported_language=LANGUAGE, supported_regions=PHONE_REGIONS)
+    )
     analyzer = AnalyzerEngine(
         registry=registry, nlp_engine=nlp_engine, supported_languages=[LANGUAGE]
     )
@@ -206,14 +214,14 @@ def main() -> None:
         if "language" in records[0]:
             for language, language_name in LANGUAGE_NAMES.items():
                 indices = [i for i, record in enumerate(records) if record["language"] == language]
-                print(f"\n{file_name}, PERSON, {language_name} sentences ({len(indices)})")
+                print(f"\n{file_name}, {language_name} sentences ({len(indices)})")
                 print(TABLE_HEADER)
                 for name, predictions in predictions_by_detector.items():
                     print_scores(
                         name,
                         [records[i] for i in indices],
                         [predictions[i] for i in indices],
-                        ("PERSON",),
+                        kinds,
                     )
         times = ", ".join(f"{name} {s:.1f}" for name, s in seconds.items())
         print(f"Wall time in seconds, single run on this machine, not a benchmark: {times}")
