@@ -32,7 +32,7 @@ from greek_pii_redactor.rules import Span
 from greek_pii_redactor.tagger import decode_spans
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "train"))
-from train_tagger import FOLDS, fold_of, person_spans, tokenize  # noqa: E402
+from train_tagger import FOLDS, fold_of, person_spans, tokenize
 
 TRAIN_FLAG_SAMPLE = 50  # there are hundreds of train flags, too many to read by hand
 TRAIN_SAMPLE_SEED = 11
@@ -186,9 +186,7 @@ def case(set_name: str, index: int, record: dict, flag: Flag | None) -> dict:
     }
 
 
-def flag_set(
-    set_name: str, records: list[dict], scored: list[Scored]
-) -> tuple[list[tuple[int, Flag]], tuple[float, float]]:
+def flag_set(set_name: str, records: list[dict], scored: list[Scored]) -> list[tuple[int, Flag]]:
     gold = [person_spans(record) for record in records]
     outside_threshold, name_threshold = thresholds(scored, gold)
     flags = [
@@ -199,7 +197,7 @@ def flag_set(
     print(f"{set_name}: t_O {outside_threshold:.3f}, t_name {name_threshold:.3f}")
     for kind in (GOLD_NOT_NAME, UNLABELLED_NAME):
         print(f"{set_name}: {sum(flag.kind == kind for _, flag in flags)} {kind} flags")
-    return flags, (outside_threshold, name_threshold)
+    return flags
 
 
 def main() -> None:
@@ -220,11 +218,11 @@ def main() -> None:
     test_records = load_records(args.data_dir, "wikiann_el_test.jsonl", NER_COMMAND)
     test_records = random.Random(SAMPLE_SEED).sample(test_records, SAMPLE_SIZE)
     test_scored = score_with_all(args.test_model_dir, test_records)
-    test_flags, _ = flag_set("test", test_records, test_scored)
+    test_flags = flag_set("test", test_records, test_scored)
     cases += [case("test", index, test_records[index], flag) for index, flag in test_flags]
 
     train_records = load_records(args.data_dir, "wikiann_el_train.jsonl", NER_COMMAND)
-    train_flags, _ = flag_set("train", train_records, score_by_fold(fold_dirs, train_records))
+    train_flags = flag_set("train", train_records, score_by_fold(fold_dirs, train_records))
     picked = random.Random(TRAIN_SAMPLE_SEED).sample(
         train_flags, min(TRAIN_FLAG_SAMPLE, len(train_flags))
     )

@@ -1,8 +1,7 @@
-"""Downloads Greek NER datasets from Hugging Face and keeps only the PERSON spans.
+"""Downloads the Greek WikiANN NER dataset from Hugging Face and keeps only the PERSON spans.
 
-Licences, as stated on each dataset's Hugging Face page:
-- unimelb-nlp/wikiann: "unknown". The labels are machine-generated from Wikipedia.
-- joelniklaus/greek_legal_ner: CC BY-NC-SA 4.0, non-commercial use only.
+Licence, as stated on the dataset's Hugging Face page (unimelb-nlp/wikiann): "unknown". The labels
+are machine-generated from Wikipedia.
 
 Output is one JSON object per line: {"text": ..., "spans": [[start, end, "PERSON"], ...]}
 with character offsets, end exclusive. Tokens are joined with single spaces.
@@ -58,16 +57,6 @@ def wikiann_records(split: str) -> list[dict]:
     return records
 
 
-def greek_legal_records(split: str) -> list[dict]:
-    lines = download("joelniklaus/greek_legal_ner", f"{split}.jsonl").decode("utf-8").splitlines()
-    records = []
-    for line in lines:
-        row = json.loads(line)
-        marks = [tag[0] if tag.endswith("-PERSON") else "O" for tag in row["ner"]]
-        records.append(to_record(row["words"], marks))
-    return records
-
-
 def write_jsonl(path: Path, records: list[dict]) -> None:
     with path.open("w", encoding="utf-8", newline="\n") as file:
         for record in records:
@@ -86,7 +75,6 @@ def main() -> None:
     wikiann["test"] = [record for record in wikiann["test"] if record["text"] not in seen]
     for split in SPLITS:
         write_jsonl(args.out_dir / f"wikiann_el_{split}.jsonl", wikiann[split])
-        write_jsonl(args.out_dir / f"greek_legal_ner_{split}.jsonl", greek_legal_records(split))
 
 
 if __name__ == "__main__":

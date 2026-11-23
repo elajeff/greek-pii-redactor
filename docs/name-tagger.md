@@ -28,8 +28,6 @@ The weights stay outside the repo. The seed 1 tagger behind the numbers in this 
 | Recall, lowercased name | 0.769 (0.043) | 0.327 (0.036) |
 | Recall, surname alone | 0.956 (0.043) | 0.493 (0.105) |
 | Recall, no article | 1.000 (0.001) | 0.824 (0.021) |
-| greek_legal_ner test, PERSON words inside one predicted span | 0.769 (0.051) | 0.723 (0.079) |
-| Same, all-caps words only | 0.728 (0.063) | 0.696 (0.110) |
 
 The synthetic sentences don't change the WikiANN score and teach the tagger lowercase names and surnames on their own. The probes are edits of the generator's own sentences, so they likely favour the tagger trained on the generator's sentences.
 

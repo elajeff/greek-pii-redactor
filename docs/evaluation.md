@@ -69,7 +69,6 @@ The tagger gave the same counts on the GPU and on the CPU, and so did the rules 
 | Data or model | Used for | Licence on its own page |
 | --- | --- | --- |
 | [unimelb-nlp/wikiann](https://huggingface.co/datasets/unimelb-nlp/wikiann) (`el`) | training and testing | unknown; labels are machine-generated from Wikipedia |
-| [joelniklaus/greek_legal_ner](https://huggingface.co/datasets/joelniklaus/greek_legal_ner) | testing the tagger (`eval/tagger_errors.py`) | CC BY-NC-SA 4.0 |
 | Greek Wiktionary, through the [kaikki.org](https://kaikki.org/elwiktionary/rawdata.html) extract | the name forms in `--names-dir`, and checking the inflection rules | Wiktionary text is CC BY-SA 4.0; the kaikki.org page names no other licence |
 | [FacebookAI/xlm-roberta-base](https://huggingface.co/FacebookAI/xlm-roberta-base) | base model of the tagger | MIT |
 | [elajeff/greek-pii-redactor-ner](https://huggingface.co/elajeff/greek-pii-redactor-ner) | the published tagger | MIT, set by me; its WikiANN training data has no known licence |
