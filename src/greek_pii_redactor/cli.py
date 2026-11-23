@@ -27,7 +27,10 @@ def load_name_detector(model_dir: Path | None) -> Callable[[str], list[Span]] | 
         print(NAMES_NOT_REDACTED, file=sys.stderr)
         return None
     if not model_dir.is_dir():
-        raise SystemExit(f"{model_dir} not found. Train it with: python train/train_tagger.py")
+        raise SystemExit(
+            f"{model_dir} not found. Download it with: "
+            f"hf download elajeff/greek-pii-redactor-ner --local-dir {model_dir}"
+        )
     # Imported here so the commands that don't need names work without torch installed.
     from greek_pii_redactor.tagger import load_tagger
 

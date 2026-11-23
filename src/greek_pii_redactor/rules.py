@@ -1,9 +1,13 @@
+"""Finds ΑΦΜ, ΑΜΚΑ, IBAN, phone numbers and emails with regexes; the first three need a valid
+check digit."""
+
 import re
 from datetime import date
 from typing import NamedTuple
 
 AFM_DIGITS = 9
 AMKA_DIGITS = 11
+AFM_MODULUS = 11
 IBAN_LENGTH = 27  # ISO 13616 length for Greece
 IBAN_MODULUS = 97
 LUHN_MODULUS = 10
@@ -15,8 +19,8 @@ class Span(NamedTuple):
     kind: str
 
 
-AFM_PATTERN = re.compile(r"(?<!\d)\d{9}(?!\d)")
-AMKA_PATTERN = re.compile(r"(?<!\d)\d{11}(?!\d)")
+AFM_PATTERN = re.compile(rf"(?<!\d)\d{{{AFM_DIGITS}}}(?!\d)")
+AMKA_PATTERN = re.compile(rf"(?<!\d)\d{{{AMKA_DIGITS}}}(?!\d)")
 IBAN_PATTERN = re.compile(
     r"(?<![0-9A-Za-z])GR\d{2}(?: ?[0-9A-Z]{4}){5} ?[0-9A-Z]{3}(?![0-9A-Za-z])"
 )
@@ -38,7 +42,7 @@ PATTERNS = [
 
 def afm_is_valid(digits: str) -> bool:
     weighted_sum = sum(int(d) * 2 ** (AFM_DIGITS - 1 - i) for i, d in enumerate(digits[:-1]))
-    return int(digits[-1]) == weighted_sum % 11 % 10
+    return int(digits[-1]) == weighted_sum % AFM_MODULUS % 10
 
 
 def luhn_is_valid(digits: str) -> bool:
@@ -59,9 +63,9 @@ def amka_is_valid(digits: str) -> bool:
     for century in (1900, 2000):
         try:
             date(century + year, month, day)
-            return luhn_is_valid(digits)
         except ValueError:
             continue
+        return luhn_is_valid(digits)
     return False
 
 
@@ -85,11 +89,10 @@ def find_ids(text: str) -> list[Span]:
             span = Span(match.start(), match.end(), kind)
             if any(span.start < c.end and c.start < span.end for c in claimed):
                 continue
+            valid = kind not in VALIDATORS or VALIDATORS[kind](match.group())
             # A mistyped IBAN still claims its text, or its digit groups would match as phones.
-            if kind == "IBAN":
+            if valid or kind == "IBAN":
                 claimed.append(span)
-            if kind in VALIDATORS and not VALIDATORS[kind](match.group()):
-                continue
-            claimed.append(span)
-            accepted.append(span)
+            if valid:
+                accepted.append(span)
     return sorted(accepted)

@@ -92,7 +92,10 @@ def main() -> None:
             "python eval/make_synthetic.py --seed 7 --split test --count 2000"
         )
     if args.model_dir and not args.model_dir.is_dir():
-        raise SystemExit(f"{args.model_dir} not found. Train it with: python train/train_tagger.py")
+        raise SystemExit(
+            f"{args.model_dir} not found. Download it with: "
+            f"hf download elajeff/greek-pii-redactor-ner --local-dir {args.model_dir}"
+        )
 
     detect_names = None
     if args.model_dir:

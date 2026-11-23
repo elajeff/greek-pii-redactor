@@ -3,14 +3,13 @@
 Per directory it prints: exact-span PERSON scores on the same WikiANN el test sample as
 evaluate.py; the errors split into exact, wrong boundary, missed and extra, with examples; recall
 on names seen and not seen in training; recall on names with no Greek-name token; three probes on
-synthetic_test.jsonl (lowercased name, surname alone, no article before the name); and word
-recall on greek_legal_ner test: its PERSON spans merge people and carry titles, so it is scored
-by word, and its names are real people's, so only counts are printed from it. With several
-directories it ends with the mean and standard deviation of WikiANN F1, of each probe's edited
-recall and of the two greek_legal_ner word shares.
+synthetic_test.jsonl (lowercased name, surname alone, no article before the name). With several
+directories it ends with the mean and standard deviation of WikiANN F1 and of each probe's edited
+recall.
 
-Setup: the same as the tagger in evaluate.py (pip install -e ".[train]", train with
-train/train_tagger.py), plus data/wiktionary_names.jsonl from eval/download_names.py.
+Setup: pip install -e ".[train]", a directory trained with train/train_tagger.py (it reads the
+epochs.json written there, which the published weights don't have), plus
+data/wiktionary_names.jsonl from eval/download_names.py.
 Run:
     python eval/tagger_errors.py --model-dir <weights dir> [<weights dir> ...]
 """
@@ -41,7 +40,6 @@ SYNTHETIC_TEST = (
     "synthetic_test.jsonl",
     "python eval/make_synthetic.py --seed 7 --split test --count 2000",
 )
-LEGAL_TEST = ("greek_legal_ner_test.jsonl", DOWNLOAD_NER)
 EXAMPLE_COUNT = 10  # enough to see the pattern in an error bucket without filling the screen
 ARTICLES = ("ο", "η", "του", "της", "τον", "την")
 GREEK_LETTER = re.compile("[Ά-ώ]")
@@ -163,27 +161,6 @@ def run_probes(
     return rows
 
 
-def legal_word_coverage(
-    tag: Callable[[str], list[Span]], records: list[dict]
-) -> tuple[int, int, int, int]:
-    words = covered = caps_words = caps_covered = 0
-    for record in records:
-        gold = person_pairs(record)
-        if not gold:
-            continue
-        predicted = {(s.start, s.end) for s in tag(record["text"])}
-        for start, end in gold:
-            for word in re.finditer(r"\w+", record["text"][start:end]):
-                word_start, word_end = start + word.start(), start + word.end()
-                inside = any(s <= word_start and word_end <= e for s, e in predicted)
-                words += 1
-                covered += inside
-                if word.group().isupper():
-                    caps_words += 1
-                    caps_covered += inside
-    return words, covered, caps_words, caps_covered
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -200,13 +177,11 @@ def main() -> None:
     wikiann = load_records(args.data_dir, "wikiann_el_test.jsonl", DOWNLOAD_NER)
     sample = random.Random(SAMPLE_SEED).sample(wikiann, SAMPLE_SIZE)
     probe_records = load_records(args.data_dir, *SYNTHETIC_TEST)
-    legal_records = load_records(args.data_dir, *LEGAL_TEST)
     seen = seen_names(args.data_dir)
     known = known_greek_words(args.data_dir)
 
     f1_per_dir: list[float] = []
     probe_per_dir: list[list[float]] = []
-    legal_per_dir: list[tuple[float, float]] = []
     for model_dir in args.model_dir:
         started = time.perf_counter()
         with (model_dir / "epochs.json").open(encoding="utf-8") as file:
@@ -298,13 +273,6 @@ def main() -> None:
             )
         probe_per_dir.append([edited_recall for _, _, _, edited_recall, _ in probes])
 
-        words, covered, caps_words, caps_covered = legal_word_coverage(tag, legal_records)
-        legal_per_dir.append((covered / words, caps_covered / caps_words))
-        print(
-            f"greek_legal_ner test, gold PERSON words inside one predicted span: "
-            f"{covered} of {words} ({covered / words:.3f}); all-caps words {caps_covered} of "
-            f"{caps_words} ({caps_covered / caps_words:.3f})"
-        )
         print(f"Time for this directory: {time.perf_counter() - started:.1f} s")
 
     if len(args.model_dir) > 1:
@@ -315,8 +283,6 @@ def main() -> None:
                 f"{name} edited recall": [row[index] for row in probe_per_dir]
                 for index, (name, _) in enumerate(PROBES)
             },
-            "legal word share": [share for share, _ in legal_per_dir],
-            "legal all-caps word share": [share for _, share in legal_per_dir],
         }
         for label, values in series.items():
             print(f"  {label:<28}{statistics.mean(values):.3f} {statistics.stdev(values):.3f}")

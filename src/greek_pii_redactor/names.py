@@ -17,7 +17,7 @@ from functools import cache
 from os.path import commonprefix
 from pathlib import Path
 
-from .inflect import (
+from greek_pii_redactor.inflect import (
     ACCENT,
     CASES,
     FEMALE_FIRST_ENDINGS,
@@ -234,7 +234,7 @@ class Names:
     def __init__(self, names: Iterable[dict], models: dict) -> None:
         # (word, role, gender) -> the forms for each case, in the order of CASES.
         self.forms: dict[tuple[str, str, str], tuple[tuple[str, ...], ...]] = {}
-        self.nominatives: dict[tuple[str, str, str, str], tuple[str, ...]] = {}
+        self.nominatives: dict[tuple[str, str, str, str], list[str]] = {}
         # (word without accents, role, gender) -> the words spelt so.
         self.words_by_spelling: dict[tuple[str, str, str], set[str]] = {}
         for name in names:
@@ -248,7 +248,7 @@ class Names:
             for case, forms in zip(CASES, table, strict=True):
                 for form in forms:
                     index = (form, *key[1:], case)
-                    self.nominatives[index] = self.nominatives.get(index, ()) + (key[0],)
+                    self.nominatives.setdefault(index, []).append(key[0])
         self.models = models
 
     def inflect_name(self, name: str, gender: str, case: str, surname_only: bool) -> str:
@@ -337,9 +337,9 @@ class Names:
             return None
         return table[CASES.index(case)] or None
 
-    def reverse(self, form: str, role: str, gender: str, case: str) -> tuple[str, ...] | None:
+    def reverse(self, form: str, role: str, gender: str, case: str) -> list[str] | None:
         if is_female_surname(role, gender):
-            return (form,)
+            return [form]
         return self.nominatives.get((form, role, gender, case))
 
     def predict(self, token: str, role: str, gender: str, case: str) -> tuple[str, float]:

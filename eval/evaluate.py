@@ -10,9 +10,10 @@ Presidio's phone region is set to GR (PHONE_REGIONS).
 Setup: pip install -e ".[eval]" and then
     python -m spacy download el_core_news_lg
 The model is not on PyPI. Its licence is CC BY-NC-SA 3.0, non-commercial use only.
-For the tagger: pip install -e ".[train]", train it (needs a CUDA GPU) with
-    python train/train_tagger.py --out <weights dir outside the repo>
-and pass the same directory as --model-dir.
+For the tagger: pip install -e ".[train]", download it with
+    hf download elajeff/greek-pii-redactor-ner --local-dir <weights dir outside the repo>
+and pass the same directory as --model-dir. Training it with train/train_tagger.py (needs a CUDA
+GPU) is only needed to change its data or seed.
 For the LLM row: install Ollama, run
     ollama pull qwen3:4b-instruct
 and pass --ollama-model qwen3:4b-instruct. On an RTX 5070 that row took about 72 minutes per
@@ -68,7 +69,6 @@ DATASETS = [
         ALL_KINDS,
         "python eval/make_synthetic.py --seed 7 --split test --count 2000",
     ),
-    # greek_legal_ner is left out: many real names in it have no PERSON label.
     ("wikiann_el_test.jsonl", ("PERSON",), "python eval/download_ner.py"),
 ]
 
@@ -165,7 +165,10 @@ def main() -> None:
     parser.add_argument("--ollama-url", default="http://localhost:11434")
     args = parser.parse_args()
     if args.model_dir and not args.model_dir.is_dir():
-        raise SystemExit(f"{args.model_dir} not found. Train it with: python train/train_tagger.py")
+        raise SystemExit(
+            f"{args.model_dir} not found. Download it with: "
+            f"hf download elajeff/greek-pii-redactor-ner --local-dir {args.model_dir}"
+        )
 
     datasets = [
         (file_name, kinds, load_records(args.data_dir, file_name, command))
