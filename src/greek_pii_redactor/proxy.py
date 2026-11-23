@@ -67,23 +67,9 @@ def reject_constant(name: str) -> None:
     raise ValueError(f"{name} is not valid JSON")
 
 
-def redact_request(
-    body: dict, detect_names: Callable[[str], list[Span]] | None
-) -> Placeholders:
-    """Checks the request against the allowlist and redacts it in place. Raises ValueError for
-    anything not allowed.
-
-    The texts of one request share one set of placeholders, so a person named in the first
-    message and the third is one placeholder.
-    """
-    placeholders: Placeholders = {}
-
-    def redact_text(text: object) -> str:
-        if not isinstance(text, str):
-            raise ValueError("text must be a string")
-        redacted, _ = redact(text, detect_names, placeholders)
-        return redacted
-
+def check_fields(body: dict) -> None:
+    """Raises ValueError for a top-level field that is not in the allowlist or has the wrong
+    type. The messages list is checked by the caller."""
     for field, value in body.items():
         if field not in ALLOWED_FIELDS:
             raise ValueError(f"field '{field}' is not supported: it is not redacted")
@@ -102,35 +88,62 @@ def redact_request(
             if not isinstance(value, str):
                 raise ValueError("field 'model' must be a string")
         elif field == "stop":
-            if isinstance(value, str):
-                body["stop"] = redact_text(value)
-            elif isinstance(value, list) and all(isinstance(item, str) for item in value):
-                body["stop"] = [redact_text(item) for item in value]
-            else:
+            if not isinstance(value, str) and not (
+                isinstance(value, list) and all(isinstance(item, str) for item in value)
+            ):
                 raise ValueError("field 'stop' must be a string or a list of strings")
+
+
+def redact_message(message: dict, redact_text: Callable[[object], str]) -> dict:
+    """The message with its texts redacted. Raises ValueError for a key, role or content part
+    that is not allowed."""
+    if unsupported := [key for key in message if key not in ALLOWED_MESSAGE_KEYS]:
+        raise ValueError(f"message key '{unsupported[0]}' is not supported: it is not redacted")
+    if message.get("role") not in ALLOWED_ROLES:
+        raise ValueError(f"message role must be one of {', '.join(ALLOWED_ROLES)}")
+    content = message.get("content")
+    if not isinstance(content, list):
+        return {**message, "content": redact_text(content)}
+    parts = []
+    for part in content:
+        if not isinstance(part, dict) or part.get("type") != "text":
+            raise ValueError("only text content parts are supported")
+        if unsupported := [key for key in part if key not in ALLOWED_PART_KEYS]:
+            raise ValueError(
+                f"content part key '{unsupported[0]}' is not supported: it is not redacted"
+            )
+        parts.append({**part, "text": redact_text(part.get("text"))})
+    return {**message, "content": parts}
+
+
+def redact_request(
+    body: dict, detect_names: Callable[[str], list[Span]] | None
+) -> Placeholders:
+    """Checks the request against the allowlist and redacts it in place. Raises ValueError for
+    anything not allowed.
+
+    The texts of one request share one set of placeholders, so a person named in the first
+    message and the third is one placeholder.
+    """
+    placeholders: Placeholders = {}
+
+    def redact_text(text: object) -> str:
+        if not isinstance(text, str):
+            raise ValueError("text must be a string")
+        redacted, _ = redact(text, detect_names, placeholders)
+        return redacted
+
+    check_fields(body)
+    stop = body.get("stop")
+    if isinstance(stop, str):
+        body["stop"] = redact_text(stop)
+    elif isinstance(stop, list):
+        body["stop"] = [redact_text(item) for item in stop]
 
     messages = body.get("messages")
     if not isinstance(messages, list) or not all(isinstance(m, dict) for m in messages):
         raise ValueError("messages must be a list of objects")
-    for message in messages:
-        for key in message:
-            if key not in ALLOWED_MESSAGE_KEYS:
-                raise ValueError(f"message key '{key}' is not supported: it is not redacted")
-        if message.get("role") not in ALLOWED_ROLES:
-            raise ValueError(f"message role must be one of {', '.join(ALLOWED_ROLES)}")
-        content = message.get("content")
-        if isinstance(content, list):
-            for part in content:
-                if not isinstance(part, dict) or part.get("type") != "text":
-                    raise ValueError("only text content parts are supported")
-                for key in part:
-                    if key not in ALLOWED_PART_KEYS:
-                        raise ValueError(
-                            f"content part key '{key}' is not supported: it is not redacted"
-                        )
-                part["text"] = redact_text(part.get("text"))
-        else:
-            message["content"] = redact_text(content)
+    body["messages"] = [redact_message(message, redact_text) for message in messages]
     return placeholders
 
 
