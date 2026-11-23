@@ -79,7 +79,7 @@ The key is passed on to the upstream as the `Authorization` header; Ollama ignor
 
 ## Limitations
 
-This is a learning project, not a tested privacy tool. Only names and the five ID kinds are replaced: addresses, ID card numbers, dates of birth and the names the tagger misses go to the upstream as they are. Lowercase and all-caps names are the tagger's weak spots. The LLM can rewrite a placeholder, and restore then has nothing to match; in one run through the proxy without the tagger, qwen3:4b-instruct wrote `ΑΦΜ: AFM_1` and the reply came back with `AFM_1` instead of the number. Restore can put a name in the wrong Greek case, and the known cases are listed at the top of `src/greek_pii_redactor/redact.py`. The proxy has no streaming and no tools, and training the tagger needs a CUDA GPU.
+This is a learning project, not a tested privacy tool. Only names and the five ID kinds are replaced: addresses, ID card numbers, dates of birth and the names the tagger misses go to the upstream as they are. Lowercase and all-caps names are the tagger's weak spots. The LLM can rewrite a placeholder, and restore then has nothing to match; in one run through the proxy without the tagger, qwen3:4b-instruct wrote `ΑΦΜ: AFM_1` and the reply came back with `AFM_1` instead of the number. Restore can put a name in the wrong Greek case, and the known cases are listed in [docs/restore.md](docs/restore.md#known-limits). The proxy has no streaming and no tools, and training the tagger needs a CUDA GPU.
 
 ## License
 

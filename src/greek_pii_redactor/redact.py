@@ -1,81 +1,13 @@
 """Replaces personal data with placeholders like [PERSON_1] and puts it back in an LLM's reply.
 
-Limit: without a names dir, restore builds the case a reply needs from the forms seen in the
-input and the rules in inflect.py, so the Greek can still be wrong where the rules cannot tell: a
-seen genitive in -ου gives the nominative only for a 2-syllable first name (Νίκου), -ίου
-(Γεωργίου), -αίου (Ματθαίου) and -όπουλου/-οπούλου, so Κωνσταντίνου, Αλεξάνδρου and other
-surnames in -ου are not derived from it; the folk first names Σπήλιος and Στέλλιος (read as
-learned), a lone female name in -η, -ή or -ά that Faker does not list as a first name only (left as
-it is), and surname-first order (Παπαδοπούλου Μαρία). Latin-script names have no rules, so they use
-the seen forms; Greek-script foreign names are inflected like Greek ones (Τόμας Μίλερ gives Τόμα
-Μίλερ). When nothing can be derived, restore uses the first form seen.
-
-Limit: without a names dir, a first name of 4+ syllables in paroxytone -ος gets the vocative -ε
-(Κωνσταντίνε); for some (Λεονάρδο/Λεονάρδε, Βενιζέλο/Βενιζέλε) both are in use and -ε is chosen.
-When the genitive moves the accent onto ι or υ after a vowel, the diaeresis is lost: Βάιος
-gives Βαίου (Βαΐου is right).
-
-With a names dir (names.py), each token's forms come from the Wiktionary lexicon, or for a name
-not in it from the classifier, and from the rules where the classifier is less than
-FORWARD_THRESHOLD sure. Seen forms the lexicon lists are read back from it: «του Αλεξάνδρου» gives
-«Ο Αλέξανδρος», Σπήλιος gives «του Σπήλιου», Βενιζέλος «Καλημέρα, Βενιζέλο» and Κρέων «του
-Κρέοντα». A male surname in -ου that Faker lists as one stays as it is in the genitive: «του
-κυρίου Σακελλαρίου» gives «Ο κύριος Σακελλαρίου». A form not in the lexicon is read back by the
-rules when they give a known name, one in the lexicon or in Faker's el_GR lists («κύριε Γιαννακέα»
-gives «Ο κύριος Γιαννακέας»). Otherwise the classifier reads it back when it is at least
-READ_BACK_THRESHOLD sure, and the rules when it is less sure («κύριε Ζβορκέα» gives «Ο κύριος
-Ζβορκέας»). A name from the classifier that is not known gives way to a known name spelt the same
-without accents whose form by the rules is the one seen: «του Ανδρονίκου» gives «Ο Ανδρόνικος»,
-not Ανδρονίκος.
-
-Limit: with a names dir, a surname in -ός that is not in the lexicon, where its -ούς twin is, has
-its genitive -ού read back as the twin. With the --holdout 0.1 --seed 7 build, Ντουρουντού gives
-Ντουρουντούς; the --holdout 0 build lists both, so the rules' Ντουρουντός is used.
-
-Limit: with a names dir, a male surname in -ου that neither the lexicon nor Faker knows, and that
-the rules cannot read back, can be given a misspelt nominative by the classifier when it is at
-least READ_BACK_THRESHOLD sure. With the --holdout 0.1 --seed 7 build, «του κυρίου
-Χατζηκοκκίνου» gives «Ο κύριος Χατζηκοκκίνος»; the --holdout 0 build lists the name, so it gives
-«Ο κύριος Χατζηκόκκινος».
-
-Limit: two forms of one person with no article before them (a bare nominative and a bare genitive)
-cannot be told apart in the reply, so restore(redacted text) may not give the input back exactly.
-
-Limit: a word before the placeholder that is not an article, title or greeting (a number counts:
-«Ήρθαν 3 Νίκος Παπαδόπουλος.» stores the article "3" and gives no nominative), or words between
-them (του κ. [PERSON_1]), make restore use the first form seen.
-
-Limit: a name seen after punctuation with no greeting (often a vocative: «Ευχαριστώ, Νίκο
-Παπαδόπουλε») counts as a nominative and wins over a seen genitive: with «Το σπίτι του Νίκου
-Παπαδοπούλου.» also seen, «Ο [PERSON_1]» restores as «Ο Νίκο Παπαδόπουλε». After a greeting
-(«Καλημέρα, Νίκο») the case is read as a vocative.
-
-Limit: how restore reads a name by how it was written (the lists are Faker's el_GR names):
-- Lowercase with an accent: inflected from it («Ο Νίκος», «του [PERSON_1]» gives «του Νίκου»).
-- Capitals, with or without an accent: inflected as lowercase and written back in capitals, with
-  an accent only where one was seen («Ο ΝΊΚΟΣ» gives «ΝΊΚΟΥ», «Ο ΝΙΚΟΣ» gives «ΝΙΚΟΥ»).
-- No accent and in the lists: the accent is taken from the list but not written (the vocative of
-  «Νικος» is «Νικο»). A name listed with two accents that give different text (Ιωνα: «Ίωνα» or
-  «Ιωνά») stays as seen.
-- No accent and not in the lists: tried with the accent on each of the last three syllables, used
-  only if all agree. Where they don't, a first name's -ος vocative is -ο («Ζβορκος» gives «Ζβορκο»,
-  not «Ζβορκε»; without a names dir «Παμφιλος» gives «Παμφιλο», where «Πάμφιλε» is right).
-  Without a names dir a surname's -ος vocative is -ε wherever the accent is (-άκος aside), so all
-  readings agree («κύριε Ζβορκε», «Νίκο Ζβορκε»); with a names dir these come out the same.
-  Otherwise the name is inflected as written, with no accent («Ζβορκια» and «της» give
-  «Ζβορκιας»).
-- Capitals mixed with lowercase, other than a leading capital (ΝΙΚΟς): the name stays as
-  seen.
-
-Limit: a man and a woman can still merge when the tokens are identical (Κώστα), and surnames
-spelled differently (Παπαδόπουλος, Παπαδόπουλλος) are separate people. The rare genitive
-Γιάννου is not matched with Γιάννης.
+The known cases where restore gets the Greek wrong are in docs/restore.md.
 """
 
 import re
 import unicodedata
 from collections.abc import Callable, Iterator
 from itertools import product
+from typing import NamedTuple
 
 from greek_pii_redactor.inflect import (
     accent_candidates,
@@ -106,38 +38,24 @@ ENDING_GROUPS = [
 ]
 ENDINGS_LONGEST_FIRST = sorted(set().union(*ENDING_GROUPS), key=len, reverse=True)
 
-ARTICLE_CASES = {
-    "ο": "nominative",
-    "η": "nominative",
-    "οι": "nominative",
-    "ένας": "nominative",
-    "τον": "accusative",
-    "την": "accusative",
-    "τη": "accusative",
-    "στον": "accusative",
-    "στην": "accusative",
-    "στη": "accusative",
-    "τους": "accusative",
-    "τις": "accusative",
-    "του": "genitive",
-    "της": "genitive",
-    "των": "genitive",
-    "ενός": "genitive",
-}
-
-ARTICLE_GENDERS = {
-    "ο": "M",
-    "ένας": "M",
-    "τον": "M",
-    "στον": "M",
-    "του": "M",
-    "ενός": "M",
-    "η": "F",
-    "την": "F",
-    "τη": "F",
-    "στην": "F",
-    "στη": "F",
-    "της": "F",
+# Article -> (case, gender), None for a plural article, which has no gender.
+ARTICLES = {
+    "ο": ("nominative", "M"),
+    "η": ("nominative", "F"),
+    "οι": ("nominative", None),
+    "ένας": ("nominative", "M"),
+    "τον": ("accusative", "M"),
+    "την": ("accusative", "F"),
+    "τη": ("accusative", "F"),
+    "στον": ("accusative", "M"),
+    "στην": ("accusative", "F"),
+    "στη": ("accusative", "F"),
+    "τους": ("accusative", None),
+    "τις": ("accusative", None),
+    "του": ("genitive", "M"),
+    "της": ("genitive", "F"),
+    "των": ("genitive", None),
+    "ενός": ("genitive", "M"),
 }
 # Title -> (case, gender). κυρία is also the accusative and vocative; a woman's name is the same
 # in all three.
@@ -169,10 +87,16 @@ WORD_BEFORE = re.compile(rf"\b({GREETING_WORDS}),?\s+$|(\w+)\s+$", re.IGNORECASE
 Placeholders = dict[str, list[dict[str, str]]]
 
 
+class Context(NamedTuple):
+    """What the word before a name asks for."""
+
+    case: str
+    gender: str | None
+    after_title: bool
+
+
 def normalise(name: str) -> str:
-    decomposed = unicodedata.normalize("NFD", name.lower())
-    unaccented = "".join(char for char in decomposed if not unicodedata.combining(char))
-    return unaccented.replace("ς", "σ")
+    return strip_accents(name).lower().replace("ς", "σ")
 
 
 def split_ending(token: str) -> tuple[str, str]:
@@ -185,10 +109,8 @@ def split_ending(token: str) -> tuple[str, str]:
 def tokens_match(first: str, second: str) -> bool:
     if first == second:
         return True
-    (first_stem, first_ending), (second_stem, second_ending) = (
-        split_ending(first),
-        split_ending(second),
-    )
+    first_stem, first_ending = split_ending(first)
+    second_stem, second_ending = split_ending(second)
     return (
         first_stem == second_stem
         and len(first_stem) >= MIN_STEM
@@ -220,14 +142,13 @@ def word_before(text: str, position: int) -> str:
     return " ".join((match.group(1) or match.group(2)).lower().split()) if match else ""
 
 
-def read_context(word: str) -> tuple[str, str | None, bool] | None:
-    """(case, gender, is a title) that the word before a name asks for."""
-    if word in ARTICLE_CASES:
-        return ARTICLE_CASES[word], ARTICLE_GENDERS.get(word), False
+def read_context(word: str) -> Context | None:
+    if word in ARTICLES:
+        return Context(*ARTICLES[word], after_title=False)
     if word in TITLES:
-        return *TITLES[word], True
+        return Context(*TITLES[word], after_title=True)
     if word in GREETINGS:
-        return "vocative", GREETINGS[word], False
+        return Context("vocative", GREETINGS[word], after_title=False)
     return None
 
 
@@ -321,7 +242,7 @@ def written_style(token: str) -> Callable[[str], str]:
 
 def nominative_candidates(
     forms: list[dict[str, str]],
-    contexts: list[tuple[str, str | None, bool] | None],
+    contexts: list[Context | None],
     gender: str | None,
     guess_accents: bool,
     names: Names | None,
@@ -332,77 +253,105 @@ def nominative_candidates(
     for form, context in zip(forms, contexts, strict=True):
         # No word right before the name (start of the text, or any punctuation) is taken as a
         # nominative.
-        if form["article"] == "" or (context and context[0] == "nominative"):
+        if form["article"] == "" or (context and context.case == "nominative"):
             yield form["text"], accent_readings(form["text"], guess_accents)
     if gender:
         for form, context in zip(forms, contexts, strict=True):
-            if context and context[0] != "nominative":
-                lone_surname = context[2] and len(form["text"].split()) == 1
+            if context and context.case != "nominative":
+                lone_surname = context.after_title and len(form["text"].split()) == 1
                 found = [
-                    read_back(reading, gender, context[0], lone_surname)
+                    read_back(reading, gender, context.case, lone_surname)
                     for reading in accent_readings(form["text"], guess_accents)
                 ]
                 if found and all(found):
                     yield form["text"], found
 
 
+def skip_shorter(
+    candidates: Iterator[tuple[str, list[str]]],
+) -> Iterator[tuple[str, list[str]]]:
+    # A form with fewer tokens than one before it, such as a lone surname, would drop the first
+    # name.
+    longest_tried = 0
+    for seen, readings in candidates:
+        if len(seen.split()) < longest_tried:
+            continue
+        longest_tried = len(seen.split())
+        yield seen, readings
+
+
+def agreed_form(
+    seen: str,
+    readings: list[str],
+    case: str,
+    gender: str | None,
+    after_title: bool,
+    inflect: Callable[[str, str, str, bool], str],
+) -> str | None:
+    """The name in the case, written the way it was seen, if every reading gives the same text."""
+    derived = set()
+    for nominative_name in readings:
+        name_gender = gender or gender_of(nominative_name)
+        lone_surname = after_title and len(nominative_name.split()) == 1
+        inflected = name_gender and inflect(nominative_name, name_gender, case, lone_surname)
+        if not inflected:
+            return None
+        tokens = inflected.split()
+        for i, seen_token in enumerate(seen.split()):
+            if needs_accent(seen_token):
+                tokens[i] = written_style(seen_token)(
+                    drop_tonos_and_unseen_diaeresis(tokens[i], seen_token)
+                )
+            elif seen_token.isupper():
+                tokens[i] = tokens[i].upper()
+        derived.add(" ".join(tokens))
+    return derived.pop() if len(derived) == 1 else None
+
+
 def derive_form(
     forms: list[dict[str, str]], case: str, reply_gender: str | None, names: Names | None
 ) -> str | None:
     contexts = [read_context(form["article"]) for form in forms]
-    gender = next((context[1] for context in contexts if context and context[1]), reply_gender)
+    gender = next(
+        (context.gender for context in contexts if context and context.gender), reply_gender
+    )
     # A single token is a surname only if the input had it after a title; a title in the reply
     # sets the case and gender, not the kind of name.
-    after_title = any(context and context[2] for context in contexts)
+    after_title = any(context and context.after_title for context in contexts)
+    inflect = names.inflect_name if names else inflect_name
     # Three tries, each only if the one before found nothing. First every accent the name could
-    # have, and the text is used only if all give the same. Then, for a vocative, the accent a
-    # foreign name in -ος usually has, which gives -ο. Last the name as written, with capitals
-    # lowercased, but not a listed name whose accents disagree: that stays as seen.
-    for attempt in ("guess", "foreign", "as_seen"):
-        if attempt == "foreign" and case != "vocative":
+    # have, and the text is used only if all give the same.
+    candidates = nominative_candidates(forms, contexts, gender, True, names)
+    for seen, readings in skip_shorter(candidates):
+        form = agreed_form(seen, readings, case, gender, after_title, inflect)
+        if form is not None:
+            return form
+
+    # Then, for a vocative, the accent a foreign name in -ος usually has, which gives -ο. This
+    # always uses the plain rules, even with a names dir: it is the rule for foreign names.
+    if case == "vocative":
+        candidates = nominative_candidates(forms, contexts, gender, True, names)
+        for seen, readings in skip_shorter(candidates):
+            fitting = [name for name in readings if fits_foreign_rule(seen, name)]
+            # Nothing filtered out means the first try already tried these readings.
+            if len(fitting) == len(readings):
+                continue
+            form = agreed_form(seen, fitting, case, gender, after_title, inflect_name)
+            if form is not None:
+                return form
+
+    # Last the name as written, with capitals lowercased, but not a listed name whose accents
+    # disagree: that stays as seen.
+    candidates = nominative_candidates(forms, contexts, gender, False, names)
+    for seen, readings in skip_shorter(candidates):
+        if any(
+            needs_accent(token) and is_listed(token) and len(accent_candidates(token)) > 1
+            for token in seen.split()
+        ):
             continue
-        # The foreign attempt always uses the plain rules, even with a names dir: it is the rule
-        # for foreign names.
-        inflect = names.inflect_name if names and attempt != "foreign" else inflect_name
-        longest_tried = 0
-        candidates = nominative_candidates(forms, contexts, gender, attempt != "as_seen", names)
-        for seen, readings in candidates:
-            # A form with fewer tokens, such as a lone surname, would drop the first name.
-            if len(seen.split()) < longest_tried:
-                continue
-            longest_tried = len(seen.split())
-            if attempt == "as_seen" and any(
-                needs_accent(token) and is_listed(token) and len(accent_candidates(token)) > 1
-                for token in seen.split()
-            ):
-                continue
-            if attempt == "foreign":
-                fitting = [name for name in readings if fits_foreign_rule(seen, name)]
-                # Nothing filtered out means the first try already tried these readings.
-                if len(fitting) == len(readings):
-                    continue
-                readings = fitting
-            derived = set()
-            for nominative_name in readings:
-                name_gender = gender or gender_of(nominative_name)
-                lone_surname = after_title and len(nominative_name.split()) == 1
-                inflected = name_gender and inflect(
-                    nominative_name, name_gender, case, lone_surname
-                )
-                if not inflected:
-                    derived.clear()
-                    break
-                tokens = inflected.split()
-                for i, seen_token in enumerate(seen.split()):
-                    if needs_accent(seen_token):
-                        tokens[i] = written_style(seen_token)(
-                            drop_tonos_and_unseen_diaeresis(tokens[i], seen_token)
-                        )
-                    elif seen_token.isupper():
-                        tokens[i] = tokens[i].upper()
-                derived.add(" ".join(tokens))
-            if len(derived) == 1:
-                return derived.pop()
+        form = agreed_form(seen, readings, case, gender, after_title, inflect)
+        if form is not None:
+            return form
     return None
 
 
@@ -410,12 +359,11 @@ def pick_form(forms: list[dict[str, str]], word: str, names: Names | None) -> st
     context = read_context(word)
     if context is None:
         return forms[0]["text"]
-    case, gender, _ = context
     for form in forms:
         seen = read_context(form["article"])
-        if seen and seen[0] == case:
+        if seen and seen.case == context.case:
             return form["text"]
-    return derive_form(forms, case, gender, names) or forms[0]["text"]
+    return derive_form(forms, context.case, context.gender, names) or forms[0]["text"]
 
 
 def restore(reply: str, placeholders: Placeholders, names: Names | None = None) -> str:
