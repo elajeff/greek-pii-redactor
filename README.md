@@ -111,7 +111,7 @@ The weights stay outside the repo. Pass the folder to the eval to add the tagger
 
 ## Placeholder survival
 
-An LLM can rewrite a placeholder (drop the brackets, translate it) and then restore has nothing to match. `eval/survival.py` sends redacted test sentences to a local [Ollama](https://ollama.com) model, asks for a polite rewrite, and counts how many placeholders come back unchanged. Temperature is 0 and the seed is set, so a run repeats.
+An LLM can rewrite a placeholder (drop the brackets, translate it) and then restore has nothing to match. `eval/survival.py` sends redacted test sentences to a local [Ollama](https://ollama.com) model, asks for a polite rewrite, and counts how many placeholders come back unchanged. Temperature is 0 and the seed is set, but Ollama's replies can still differ slightly from run to run.
 
 ```powershell
 ollama pull qwen3:4b-instruct
