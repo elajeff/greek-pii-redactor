@@ -21,7 +21,8 @@ Data (in --data-dir, default data/), created by:
     python eval/make_synthetic.py --seed 7 --split test --count 2000
     python eval/download_ner.py
 
-The real datasets only label PERSON, so only PERSON is scored on them.
+The real datasets only label PERSON, so only PERSON is scored on them. The synthetic sentences
+also get a PERSON table for the Greek ones and one for the English ones.
 """
 
 import argparse
@@ -43,6 +44,10 @@ LANGUAGE = "el"
 SPACY_MODEL = "el_core_news_lg"
 ID_KINDS = ("AFM", "AMKA", "IBAN", "PHONE", "EMAIL")
 ALL_KINDS = ("PERSON", *ID_KINDS)
+LANGUAGE_NAMES = {"el": "Greek", "en": "English"}
+TABLE_HEADER = (
+    f"{'detector':<21}{'kind':<8}{'TP':>7}{'FP':>7}{'FN':>7}{'precision':>11}{'recall':>9}"
+)
 # Presidio entities mapped to our kinds. Anything else it returns (LOCATION, URL, DATE_TIME ...)
 # is dropped rather than counted as a false positive, because we only score the kinds we target.
 PRESIDIO_KINDS = {
@@ -68,7 +73,7 @@ NAME_INSTRUCTION = (
     "there, one per line. Only people, not places, organisations or works. "
     "If there is none, reply with NONE."
 )
-LLM_SEED = 7  # any fixed value; even at temperature 0 reruns differ by a name or two
+LLM_SEED = 7  # any fixed value; at temperature 0 reruns still found up to 8 names more or fewer
 
 Detector = Callable[[str], list[Span]]
 
@@ -183,8 +188,9 @@ def main() -> None:
             records = random.Random(SAMPLE_SEED).sample(records, SAMPLE_SIZE)
             heading = f"{file_name}: {SAMPLE_SIZE} sentences sampled with seed {SAMPLE_SEED}"
         print(f"\n{heading}")
-        print(f"{'detector':<21}{'kind':<8}{'TP':>7}{'FP':>7}{'FN':>7}{'precision':>11}{'recall':>9}")
+        print(TABLE_HEADER)
         seconds = {}
+        predictions_by_detector = {}
         llm_names_not_in_text = 0
         for name, detect in detectors.items():
             started = time.perf_counter()
@@ -193,9 +199,22 @@ def main() -> None:
                 for record in records
             ]
             seconds[name] = time.perf_counter() - started
+            predictions_by_detector[name] = predictions
             print_scores(name, records, predictions, kinds)
         if args.ollama_model:
             print(f"LLM names not in the text: {llm_names_not_in_text}")
+        if "language" in records[0]:
+            for language, language_name in LANGUAGE_NAMES.items():
+                indices = [i for i, record in enumerate(records) if record["language"] == language]
+                print(f"\n{file_name}, PERSON, {language_name} sentences ({len(indices)})")
+                print(TABLE_HEADER)
+                for name, predictions in predictions_by_detector.items():
+                    print_scores(
+                        name,
+                        [records[i] for i in indices],
+                        [predictions[i] for i in indices],
+                        ("PERSON",),
+                    )
         times = ", ".join(f"{name} {s:.1f}" for name, s in seconds.items())
         print(f"Wall time in seconds, single run on this machine, not a benchmark: {times}")
 
