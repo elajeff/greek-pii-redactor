@@ -16,7 +16,7 @@ It needs a CUDA GPU. The default PyPI torch wheel on Windows is CPU-only, so ins
 
 For example, `.\.venv\Scripts\python.exe train/train_tagger.py --out C:\Users\you\weights\wikiann-only --without-synthetic --train-fraction 0.5 --seed 1` trains on half of WikiANN with seed 1.
 
-The weights stay outside the repo and none are published. Pass the folder to `--model-dir` of the eval scripts, the CLI and the proxy.
+The weights stay outside the repo. The seed 1 tagger behind the numbers in this repo is on Hugging Face as [elajeff/greek-pii-redactor-ner](https://huggingface.co/elajeff/greek-pii-redactor-ner), so training is only needed to change the data or the seed. Pass the folder to `--model-dir` of the eval scripts, the CLI and the proxy.
 
 ## What the synthetic sentences add
 
