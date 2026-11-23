@@ -12,7 +12,8 @@ nominative, which is why stems are compared). Only names the ending rules can in
 The genitive moves the accent (Παπαδοπούλου), which Wiktionary lists as the more formal form;
 the unmoved Παπαδόπουλου is also used in everyday text and is not generated.
 
-Record format, one JSON object per line: {"text": ..., "spans": [[start, end, kind], ...]}
+Record format, one JSON object per line:
+{"text": ..., "spans": [[start, end, kind], ...], "language": "el" or "en"}
 with character offsets, end exclusive.
 """
 
@@ -288,7 +289,7 @@ def make_record(rng: random.Random, split: str) -> dict:
         spans.append([len(text), len(text) + len(surface), kind])
         text += surface
     text += template[cursor:]
-    return {"text": text, "spans": spans}
+    return {"text": text, "spans": spans, "language": "el" if greek else "en"}
 
 
 def generate(seed: int, split: str, count: int) -> list[dict]:
