@@ -1,5 +1,6 @@
 import pytest
 
+from greek_pii_redactor.redact import redact, restore
 from greek_pii_redactor.rules import Span, find_ids
 
 
@@ -71,3 +72,15 @@ def test_several_ids_in_one_sentence() -> None:
 def test_overlapping_matches_keep_highest_priority() -> None:
     assert find_ids("123456783@example.gr") == [Span(0, 20, "EMAIL")]
     assert find_ids("2101234567") == [Span(0, 10, "PHONE")]
+
+
+@pytest.mark.parametrize("digits", ["０１２３４５６７８９", "٠١٢٣٤٥٦٧٨٩"])
+def test_finds_ids_written_in_other_digits(digits: str) -> None:
+    to_script = str.maketrans("0123456789", digits)
+    ascii_ids = ("123456783", "15038512347", "GR16 0110 1250 0000 0001 2300 695", "6912345678")
+    afm, amka, iban, phone = (number.translate(to_script) for number in ascii_ids)
+    text = f"ΑΦΜ {afm}, ΑΜΚΑ {amka}, IBAN {iban}, τηλ. {phone}."
+    found = [(text[s.start : s.end], s.kind) for s in find_ids(text)]
+    assert found == [(afm, "AFM"), (amka, "AMKA"), (iban, "IBAN"), (phone, "PHONE")]
+    redacted, placeholders = redact(text)
+    assert restore(redacted, placeholders) == text
