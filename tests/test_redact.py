@@ -210,6 +210,21 @@ def test_id_wins_over_overlapping_name_span() -> None:
             "Καλημέρα, [PERSON_1].",
             "Καλημέρα, Ζβόρκο.",
         ),
+        # A mistyped name's extra tonos is dropped before the accent is placed.
+        (
+            "Το γραφείο του Παπαδόπούλου.",
+            ("Παπαδόπούλου",),
+            "Ο [PERSON_1] ήρθε.",
+            "Ο Παπαδόπουλος ήρθε.",
+        ),
+        ("Το γραφείο του Γεώργίου.", ("Γεώργίου",), "Ο [PERSON_1] ήρθε.", "Ο Γεώργιος ήρθε."),
+        # The first part of a hyphenated surname keeps its tonos.
+        (
+            "Το γραφείο του Νικολάου-Παπαδοπούλου.",
+            ("Νικολάου-Παπαδοπούλου",),
+            "Ο [PERSON_1] ήρθε.",
+            "Ο Νικολάου-Παπαδόπουλος ήρθε.",
+        ),
     ],
 )
 def test_restore_picks_the_form_that_fits_the_article(

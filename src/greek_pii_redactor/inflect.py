@@ -47,6 +47,8 @@ FEMALE_GENITIVE_ENDINGS = ("ας", "άς", "ης", "ής", "ως", "ώς")
 
 ACCENT = dict(zip("αεηιουωΑΕΗΙΟΥΩϊϋ", "άέήίόύώΆΈΉΊΌΎΏΐΰ", strict=True))
 ACCENTED = set(ACCENT.values())
+# Drops the tonos only: ΐ and ΰ keep their diaeresis, which strip_accents would remove too.
+NO_TONOS = str.maketrans("".join(ACCENT.values()), "".join(ACCENT))
 VOWELS = set(ACCENT) | ACCENTED
 DIPHTHONGS = {"αι", "ει", "οι", "υι", "ου", "αυ", "ευ", "ηυ"}
 DIAERESIS = "ϊϋΐΰ"  # breaks a diphthong: Βαϊτσόπουλος has four syllables before -λος
@@ -129,11 +131,16 @@ def shift_accent(word: str, first_name: bool) -> str:
 
 
 def accent_third_from_end(word: str, first_name: bool) -> str | None:
-    spans = syllables(word, first_name)
+    """Only the last part of a hyphenated word changes, and None if it has fewer than three
+    syllables. A mistyped name can bring a tonos of its own (Παπαδόπούλου); that part keeps only
+    the tonos placed here."""
+    head, hyphen, last = word.rpartition("-")
+    last = last.translate(NO_TONOS)
+    spans = syllables(last, first_name)
     if len(spans) < 3:
         return None
     end = spans[-3][1]
-    return word[: end - 1] + ACCENT[word[end - 1]] + word[end:]
+    return head + hyphen + last[: end - 1] + ACCENT[last[end - 1]] + last[end:]
 
 
 def male_vocative(token: str, first_name: bool) -> str:
