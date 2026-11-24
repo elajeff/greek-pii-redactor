@@ -6,11 +6,12 @@ back to the name). Prints one table grouped by role, gender and the name's last 
 totals for all names and for the names in the Faker lists the rules were built from. Every forward
 disagreement and wrong read-back goes to --out, one JSON object per line.
 
-    PYTHONIOENCODING=utf-8 python eval/wiktionary.py
+    python eval/wiktionary.py
 """
 
 import argparse
 import json
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -53,6 +54,8 @@ def main() -> None:
     parser.add_argument("--names", type=Path, default=Path("data/wiktionary_names.jsonl"))
     parser.add_argument("--out", type=Path, default=Path("data/wiktionary_disagreements.jsonl"))
     args = parser.parse_args()
+    # Redirected output on Windows is cp1252, which cannot print the Greek endings.
+    sys.stdout.reconfigure(encoding="utf-8")
 
     with args.names.open(encoding="utf-8") as file:
         names = [json.loads(line) for line in file]

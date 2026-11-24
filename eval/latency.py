@@ -10,7 +10,6 @@ deployment adds a little more. Reports IDs only, and with --model-dir the PERSON
 
 import argparse
 import asyncio
-import json
 import random
 import statistics
 import time
@@ -20,11 +19,13 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from records import MODEL_DIR_HELP, load_records, require_model_dir
 
 from greek_pii_redactor.proxy import create_app
 from greek_pii_redactor.rules import Span
 
 DATA_FILE = Path("data/synthetic_test.jsonl")
+SYNTHETIC_TEST_COMMAND = "python eval/make_synthetic.py --seed 7 --split test --count 2000"
 ENDPOINT = "http://proxy/v1/chat/completions"
 # The first requests load kernels and warm caches; they are not what a running proxy costs.
 WARMUP_REQUESTS = 5
@@ -77,21 +78,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--count", type=int, default=200)
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--model-dir", type=Path, help="weights from train/train_tagger.py")
+    parser.add_argument("--model-dir", type=Path, help=MODEL_DIR_HELP)
     args = parser.parse_args()
-    if not DATA_FILE.exists():
-        raise SystemExit(
-            f"{DATA_FILE} not found. Create it with: "
-            "python eval/make_synthetic.py --seed 7 --split test --count 2000"
-        )
-    if args.model_dir and not args.model_dir.is_dir():
-        raise SystemExit(
-            f"{args.model_dir} not found. Download it with: "
-            f"hf download elajeff/greek-pii-redactor-ner --local-dir {args.model_dir}"
-        )
+    records = load_records(DATA_FILE.parent, DATA_FILE.name, SYNTHETIC_TEST_COMMAND)
+    if args.model_dir:
+        require_model_dir(args.model_dir)
 
-    with DATA_FILE.open(encoding="utf-8") as file:
-        records = [json.loads(line) for line in file]
     if args.count > len(records):
         raise SystemExit(f"--count {args.count} exceeds the {len(records)} records in {DATA_FILE}")
     texts = [record["text"] for record in random.Random(args.seed).sample(records, args.count)]

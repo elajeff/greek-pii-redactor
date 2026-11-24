@@ -28,7 +28,6 @@ also get a table of every kind for the Greek ones and one for the English ones.
 """
 
 import argparse
-import json
 import random
 import time
 from collections.abc import Callable
@@ -37,12 +36,11 @@ from pathlib import Path
 from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_analyzer.predefined_recognizers import PhoneRecognizer
+from records import MODEL_DIR_HELP, SAMPLE_SEED, SAMPLE_SIZE, load_records, require_model_dir
 from survival import ask_model
 
 from greek_pii_redactor.rules import Span, find_ids
 
-SAMPLE_SIZE = 2000  # keeps the Presidio runs short; the synthetic file is already this size
-SAMPLE_SEED = 7
 LANGUAGE = "el"
 SPACY_MODEL = "el_core_news_lg"
 # Presidio's default regions have no GR and read ΑΜΚΑ and ΑΦΜ as phone numbers.
@@ -128,14 +126,6 @@ def persons_in_reply(reply: str, text: str) -> tuple[list[Span], int]:
     return persons, not_in_text
 
 
-def load_records(data_dir: Path, file_name: str, command: str) -> list[dict]:
-    path = data_dir / file_name
-    if not path.exists():
-        raise SystemExit(f"{path} not found. Create it with: {command}")
-    with path.open(encoding="utf-8") as file:
-        return [json.loads(line) for line in file]
-
-
 def ratio(numerator: int, denominator: int) -> str:
     return f"{numerator / denominator:.3f}" if denominator else "n/a"
 
@@ -157,30 +147,79 @@ def print_scores(
         )
 
 
+def build_detectors(model_dir: Path | None) -> dict[str, Detector]:
+    detectors = {"rules only": find_ids, "Presidio + spaCy el": build_presidio()}
+    if model_dir:
+        # Imported here so the other detectors run without torch and transformers installed.
+        from greek_pii_redactor.tagger import load_tagger
+
+        tag_persons = load_tagger(model_dir)
+        detectors["XLM-R tagger + rules"] = lambda text: sorted(find_ids(text) + tag_persons(text))
+    return detectors
+
+
+def sample_records(file_name: str, records: list[dict]) -> list[dict]:
+    """Prints the dataset heading; files above SAMPLE_SIZE records are sampled down to it."""
+    heading = f"{file_name}: {len(records)} sentences"
+    if len(records) > SAMPLE_SIZE:
+        records = random.Random(SAMPLE_SEED).sample(records, SAMPLE_SIZE)
+        heading = f"{file_name}: {SAMPLE_SIZE} sentences sampled with seed {SAMPLE_SEED}"
+    print(f"\n{heading}")
+    return records
+
+
+def run_detectors(
+    detectors: dict[str, Detector], records: list[dict], kinds: tuple[str, ...]
+) -> tuple[dict[str, list[list[Span]]], dict[str, float]]:
+    """Prints each detector's scores; returns its predictions and wall time in seconds."""
+    seconds = {}
+    predictions_by_detector = {}
+    for name, detect in detectors.items():
+        started = time.perf_counter()
+        predictions = [
+            [span for span in detect(record["text"]) if span.kind in kinds] for record in records
+        ]
+        seconds[name] = time.perf_counter() - started
+        predictions_by_detector[name] = predictions
+        print_scores(name, records, predictions, kinds)
+    return predictions_by_detector, seconds
+
+
+def print_language_tables(
+    file_name: str,
+    records: list[dict],
+    predictions_by_detector: dict[str, list[list[Span]]],
+    kinds: tuple[str, ...],
+) -> None:
+    for language, language_name in LANGUAGE_NAMES.items():
+        indices = [i for i, record in enumerate(records) if record["language"] == language]
+        print(f"\n{file_name}, {language_name} sentences ({len(indices)})")
+        print(TABLE_HEADER)
+        for name, predictions in predictions_by_detector.items():
+            print_scores(
+                name,
+                [records[i] for i in indices],
+                [predictions[i] for i in indices],
+                kinds,
+            )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
-    parser.add_argument("--model-dir", type=Path, help="weights from train/train_tagger.py")
+    parser.add_argument("--model-dir", type=Path, help=MODEL_DIR_HELP)
     parser.add_argument("--ollama-model", help="adds the LLM + rules row, e.g. qwen3:4b-instruct")
     parser.add_argument("--ollama-url", default="http://localhost:11434")
     args = parser.parse_args()
-    if args.model_dir and not args.model_dir.is_dir():
-        raise SystemExit(
-            f"{args.model_dir} not found. Download it with: "
-            f"hf download elajeff/greek-pii-redactor-ner --local-dir {args.model_dir}"
-        )
+    if args.model_dir:
+        require_model_dir(args.model_dir)
 
     datasets = [
         (file_name, kinds, load_records(args.data_dir, file_name, command))
         for file_name, kinds, command in DATASETS
     ]
-    detectors = {"rules only": find_ids, "Presidio + spaCy el": build_presidio()}
-    if args.model_dir:
-        # Imported here so the other detectors run without torch and transformers installed.
-        from greek_pii_redactor.tagger import load_tagger
-
-        tag_persons = load_tagger(args.model_dir)
-        detectors["XLM-R tagger + rules"] = lambda text: sorted(find_ids(text) + tag_persons(text))
+    detectors = build_detectors(args.model_dir)
+    llm_names_not_in_text = 0
     if args.ollama_model:
 
         def ask_for_persons(text: str) -> list[Span]:
@@ -194,38 +233,14 @@ def main() -> None:
         print(f"LLM + rules: {args.ollama_model} at {args.ollama_url}, seed {LLM_SEED}")
 
     for file_name, kinds, records in datasets:
-        heading = f"{file_name}: {len(records)} sentences"
-        if len(records) > SAMPLE_SIZE:
-            records = random.Random(SAMPLE_SEED).sample(records, SAMPLE_SIZE)
-            heading = f"{file_name}: {SAMPLE_SIZE} sentences sampled with seed {SAMPLE_SEED}"
-        print(f"\n{heading}")
+        records = sample_records(file_name, records)
         print(TABLE_HEADER)
-        seconds = {}
-        predictions_by_detector = {}
         llm_names_not_in_text = 0
-        for name, detect in detectors.items():
-            started = time.perf_counter()
-            predictions = [
-                [span for span in detect(record["text"]) if span.kind in kinds]
-                for record in records
-            ]
-            seconds[name] = time.perf_counter() - started
-            predictions_by_detector[name] = predictions
-            print_scores(name, records, predictions, kinds)
+        predictions_by_detector, seconds = run_detectors(detectors, records, kinds)
         if args.ollama_model:
             print(f"LLM names not in the text: {llm_names_not_in_text}")
         if "language" in records[0]:
-            for language, language_name in LANGUAGE_NAMES.items():
-                indices = [i for i, record in enumerate(records) if record["language"] == language]
-                print(f"\n{file_name}, {language_name} sentences ({len(indices)})")
-                print(TABLE_HEADER)
-                for name, predictions in predictions_by_detector.items():
-                    print_scores(
-                        name,
-                        [records[i] for i in indices],
-                        [predictions[i] for i in indices],
-                        kinds,
-                    )
+            print_language_tables(file_name, records, predictions_by_detector, kinds)
         times = ", ".join(f"{name} {s:.1f}" for name, s in seconds.items())
         print(f"Wall time in seconds, single run on this machine, not a benchmark: {times}")
 

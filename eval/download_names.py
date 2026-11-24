@@ -13,7 +13,7 @@ singular nominative other than the word is skipped and counted: the table is ano
 Source: the kaikki.org extract of el.wiktionary (EXTRACT_URL), downloaded to --cache if the file
 is missing. Wiktionary text is CC BY-SA 4.0.
 
-    PYTHONIOENCODING=utf-8 python eval/download_names.py
+    python eval/download_names.py
 """
 
 import argparse
@@ -53,6 +53,52 @@ def download(cache: Path) -> None:
     part.replace(cache)
 
 
+def name_roles(entry: dict) -> tuple[set[tuple[str, str]], set[str]]:
+    """The (role, gender) pairs of the entry's name senses, and those senses' categories."""
+    # A sense with form_of or alt_of is a variant spelling (Θοδωρής of Θεόδωρος).
+    senses = [s for s in entry["senses"] if not s.get("form_of") and not s.get("alt_of")]
+    # Many senses have no categories key (18648 in the extract); null counts as none too.
+    categories = {c for sense in senses for c in sense.get("categories") or []}
+    return {ROLE_CATEGORIES[c] for c in categories if c in ROLE_CATEGORIES}, categories
+
+
+def table_forms(
+    entry: dict, word: str, skipped: Counter
+) -> tuple[dict[str, set[str]], set[str], bool]:
+    """The singular table forms per case, the table's nominatives, and whether a form is tagged
+    invariable."""
+    cases: dict[str, set[str]] = {case: set() for case in CASES}
+    nominatives = set()
+    invariable = False
+    # 38 entries have no forms and 1546 forms have no tags.
+    for form in entry.get("forms") or []:
+        tags = form.get("tags") or []
+        invariable = invariable or "invariable" in tags
+        if form["source"] in TABLE_SOURCES and "singular" in tags:
+            # Polytonic forms (Ὺακίνθου) fall outside the block too.
+            if not isinstance(form.get("form"), str) or not GREEK_WORD.fullmatch(form["form"]):
+                skipped["table form missing or not one word in Greek script"] += 1
+                continue
+            if "nominative" in tags:
+                nominatives.add(form["form"])
+            if tonos_count(form["form"]) != tonos_count(word):
+                skipped["table form with a different number of accents"] += 1
+                continue
+            for case in set(tags) & set(CASES):
+                cases[case].add(form["form"])
+    return cases, nominatives, invariable
+
+
+def pick_table(
+    word: str, role: str, gender: str, cases: dict[str, set[str]], invariable: bool
+) -> dict[str, set[str]] | None:
+    if any(cases.values()):
+        return cases
+    if role == "surname" and gender == "F" and invariable:
+        return {case: {word} for case in CASES}
+    return None
+
+
 def read_tables(cache: Path, skipped: Counter) -> dict[tuple[str, str, str], dict[str, set[str]]]:
     """(word, role, gender) -> case -> the singular forms Wiktionary gives for that case."""
     tables: dict[tuple[str, str, str], dict[str, set[str]]] = {}
@@ -62,11 +108,7 @@ def read_tables(cache: Path, skipped: Counter) -> dict[tuple[str, str, str], dic
             # Redirect lines have no lang_code.
             if entry.get("lang_code") != "el" or entry["pos"] != "name":
                 continue
-            # A sense with form_of or alt_of is a variant spelling (Θοδωρής of Θεόδωρος).
-            senses = [s for s in entry["senses"] if not s.get("form_of") and not s.get("alt_of")]
-            # Many senses have no categories key (18648 in the extract); null counts as none too.
-            categories = {c for sense in senses for c in sense.get("categories") or []}
-            roles = {ROLE_CATEGORIES[c] for c in categories if c in ROLE_CATEGORIES}
+            roles, categories = name_roles(entry)
             if not roles:
                 continue
             if len({gender for _, gender in roles}) > 1:
@@ -76,36 +118,14 @@ def read_tables(cache: Path, skipped: Counter) -> dict[tuple[str, str, str], dic
             if not GREEK_WORD.fullmatch(word):
                 skipped["not one word in Greek script"] += 1
                 continue
-            cases: dict[str, set[str]] = {case: set() for case in CASES}
-            nominatives = set()
-            invariable = INDECLINABLE_CATEGORY in categories
-            # 38 entries have no forms and 1546 forms have no tags.
-            for form in entry.get("forms") or []:
-                tags = form.get("tags") or []
-                invariable = invariable or "invariable" in tags
-                if form["source"] in TABLE_SOURCES and "singular" in tags:
-                    # Polytonic forms (Ὺακίνθου) fall outside the block too.
-                    if not isinstance(form.get("form"), str) or not GREEK_WORD.fullmatch(
-                        form["form"]
-                    ):
-                        skipped["table form missing or not one word in Greek script"] += 1
-                        continue
-                    if "nominative" in tags:
-                        nominatives.add(form["form"])
-                    if tonos_count(form["form"]) != tonos_count(word):
-                        skipped["table form with a different number of accents"] += 1
-                        continue
-                    for case in set(tags) & set(CASES):
-                        cases[case].add(form["form"])
+            cases, nominatives, tagged_invariable = table_forms(entry, word, skipped)
             if nominatives and word not in nominatives:
                 skipped["entry with the table of another word"] += 1
                 continue
+            invariable = INDECLINABLE_CATEGORY in categories or tagged_invariable
             for role, gender in sorted(roles):
-                if any(cases.values()):
-                    found = cases
-                elif role == "surname" and gender == "F" and invariable:
-                    found = {case: {word} for case in CASES}
-                else:
+                found = pick_table(word, role, gender, cases, invariable)
+                if found is None:
                     skipped[f"{role} {gender} with no table"] += 1
                     continue
                 table = tables.setdefault((word, role, gender), {case: set() for case in CASES})

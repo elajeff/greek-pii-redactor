@@ -24,7 +24,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from evaluate import SAMPLE_SEED, SAMPLE_SIZE, load_records
+from records import SAMPLE_SEED, SAMPLE_SIZE, load_records
 
 from greek_pii_redactor.inflect import accents_by_plain_form, strip_accents
 from greek_pii_redactor.rules import Span
@@ -56,7 +56,7 @@ def overlaps(first: tuple[int, int], others: Pairs) -> bool:
     return any(first[0] < end and start < first[1] for start, end in others)
 
 
-def lowercase(text: str, start: int, end: int) -> tuple[int, str] | None:
+def lowercase(text: str, start: int, end: int) -> tuple[int, str]:
     return start, text[start:end].lower()
 
 
@@ -91,7 +91,7 @@ def edit_record(
     before: Pairs = set()
     for start, end in sorted(person_pairs(record)):
         edit = rewrite(text, start, end) if GREEK_LETTER.search(text[start:end]) else None
-        cut, name = edit if edit else (start, text[start:end])
+        cut, name = edit or (start, text[start:end])
         out += text[copied:cut]
         new_span = (len(out), len(out) + len(name))
         out += name
@@ -161,6 +161,98 @@ def run_probes(
     return rows
 
 
+def print_wikiann_score(true_pos: int, false_pos: int, false_neg: int) -> float:
+    f1 = f1_score(true_pos, false_pos, false_neg)
+    print(
+        f"WikiANN test, {SAMPLE_SIZE} sentences sampled with seed {SAMPLE_SEED}: PERSON "
+        f"TP {true_pos}, FP {false_pos}, FN {false_neg}, "
+        f"precision {true_pos / (true_pos + false_pos):.3f}, "
+        f"recall {true_pos / (true_pos + false_neg):.3f}, F1 {f1:.3f}"
+    )
+    return f1
+
+
+def print_errors(
+    sample: list[dict],
+    gold: list[Pairs],
+    found: list[Pairs],
+    true_pos: int,
+    false_pos: int,
+    false_neg: int,
+) -> None:
+    overlapping = 0
+    wrong_boundary: list[tuple[str, str]] = []
+    missed: list[str] = []
+    extra: list[str] = []
+    for record, expected, got in zip(sample, gold, found, strict=True):
+        text = record["text"]
+        for start, end in sorted(expected - got):
+            touching = [p for p in sorted(got) if p[0] < end and start < p[1]]
+            if touching:
+                wrong_boundary.append((text[start:end], " | ".join(text[a:b] for a, b in touching)))
+            else:
+                missed.append(text[start:end])
+        for start, end in sorted(got - expected):
+            if overlaps((start, end), expected):
+                overlapping += 1
+            else:
+                extra.append(text[start:end])
+    print(
+        f"Errors: exact {true_pos}, wrong boundary {len(wrong_boundary)}, missed {len(missed)}, "
+        f"extra {len(extra)}"
+    )
+    print(
+        f"  gold {true_pos + false_neg} = {true_pos} + {len(wrong_boundary)} + {len(missed)}; "
+        f"predicted {true_pos + false_pos} = {true_pos} + {len(extra)} + {overlapping} "
+        "overlapping a gold span"
+    )
+    print("  wrong boundary (gold -> predicted):")
+    for gold_text, predicted_text in wrong_boundary[:EXAMPLE_COUNT]:
+        print(f"    {gold_text!r} -> {predicted_text!r}")
+    print("  missed:", missed[:EXAMPLE_COUNT])
+    print("  extra:", extra[:EXAMPLE_COUNT])
+
+
+def print_recall_by_name(
+    gold_hits: list[tuple[str, bool]], seen: set[str], known: set[str]
+) -> None:
+    print("Seen in training or not (casefolded span text):")
+    print(" ", recall_line("seen", [hit for text, hit in gold_hits if text.casefold() in seen]))
+    print(
+        " ", recall_line("unseen", [hit for text, hit in gold_hits if text.casefold() not in seen])
+    )
+    no_greek_name = [
+        hit
+        for text, hit in gold_hits
+        if GREEK_LETTER.search(text)
+        and not any(strip_accents(word).lower() in known for word in re.findall(r"\w+", text))
+    ]
+    print(recall_line("No Greek-name token", no_greek_name))
+
+
+def print_probes(tag: Callable[[str], list[Span]], probe_records: list[dict]) -> list[float]:
+    """Prints the probe table; returns each probe's edited recall."""
+    print("Probes on synthetic_test.jsonl (PERSON spans with a Greek letter):")
+    print(f"  {'probe':<15}{'spans':>7}{'recall before':>15}{'recall edited':>15}{'FP edited':>11}")
+    probes = run_probes(tag, probe_records)
+    for name, spans, before_recall, edited_recall, probe_fp in probes:
+        print(f"  {name:<15}{spans:>7}{before_recall:>15.3f}{edited_recall:>15.3f}{probe_fp:>11}")
+    return [edited_recall for _, _, _, edited_recall, _ in probes]
+
+
+def print_spread(f1_per_dir: list[float], probe_per_dir: list[list[float]]) -> None:
+    print(f"\nMean and standard deviation over {len(f1_per_dir)} directories:")
+    series = {
+        "WikiANN F1": f1_per_dir,
+        **{
+            f"{name} edited recall": [row[index] for row in probe_per_dir]
+            for index, (name, _) in enumerate(PROBES)
+        },
+    }
+    for label, values in series.items():
+        print(f"  {label:<28}{statistics.mean(values):.3f} {statistics.stdev(values):.3f}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -176,6 +268,7 @@ def main() -> None:
 
     wikiann = load_records(args.data_dir, "wikiann_el_test.jsonl", DOWNLOAD_NER)
     sample = random.Random(SAMPLE_SEED).sample(wikiann, SAMPLE_SIZE)
+    gold = [person_pairs(record) for record in sample]
     probe_records = load_records(args.data_dir, *SYNTHETIC_TEST)
     seen = seen_names(args.data_dir)
     known = known_greek_words(args.data_dir)
@@ -194,98 +287,20 @@ def main() -> None:
         tag = load_tagger(model_dir)
 
         found = [{(s.start, s.end) for s in tag(record["text"])} for record in sample]
-        gold = [person_pairs(record) for record in sample]
         true_pos, false_pos, false_neg = exact_scores(gold, found)
-        f1 = f1_score(true_pos, false_pos, false_neg)
-        f1_per_dir.append(f1)
-        print(
-            f"WikiANN test, {SAMPLE_SIZE} sentences sampled with seed {SAMPLE_SEED}: PERSON "
-            f"TP {true_pos}, FP {false_pos}, FN {false_neg}, "
-            f"precision {true_pos / (true_pos + false_pos):.3f}, "
-            f"recall {true_pos / (true_pos + false_neg):.3f}, F1 {f1:.3f}"
-        )
-
-        exact = overlapping = 0
-        wrong_boundary: list[tuple[str, str]] = []
-        missed: list[str] = []
-        extra: list[str] = []
-        gold_count = predicted_count = 0
-        gold_hits: list[tuple[str, bool]] = []
-        for record, expected, got in zip(sample, gold, found, strict=True):
-            text = record["text"]
-            gold_count += len(expected)
-            predicted_count += len(got)
-            exact += len(expected & got)
-            for start, end in sorted(expected):
-                gold_hits.append((text[start:end], (start, end) in got))
-                if (start, end) in got:
-                    continue
-                touching = [p for p in sorted(got) if p[0] < end and start < p[1]]
-                if touching:
-                    wrong_boundary.append(
-                        (text[start:end], " | ".join(text[a:b] for a, b in touching))
-                    )
-                else:
-                    missed.append(text[start:end])
-            for start, end in sorted(got - expected):
-                if overlaps((start, end), expected):
-                    overlapping += 1
-                else:
-                    extra.append(text[start:end])
-        print(
-            f"Errors: exact {exact}, wrong boundary {len(wrong_boundary)}, missed {len(missed)}, "
-            f"extra {len(extra)}"
-        )
-        print(
-            f"  gold {gold_count} = {exact} + {len(wrong_boundary)} + {len(missed)}; predicted "
-            f"{predicted_count} = {exact} + {len(extra)} + {overlapping} overlapping a gold span"
-        )
-        print("  wrong boundary (gold -> predicted):")
-        for gold_text, predicted_text in wrong_boundary[:EXAMPLE_COUNT]:
-            print(f"    {gold_text!r} -> {predicted_text!r}")
-        print("  missed:", missed[:EXAMPLE_COUNT])
-        print("  extra:", extra[:EXAMPLE_COUNT])
-
-        print("Seen in training or not (casefolded span text):")
-        print(" ", recall_line("seen", [hit for text, hit in gold_hits if text.casefold() in seen]))
-        print(
-            " ",
-            recall_line("unseen", [hit for text, hit in gold_hits if text.casefold() not in seen]),
-        )
-
-        no_greek_name = [
-            hit
-            for text, hit in gold_hits
-            if GREEK_LETTER.search(text)
-            and not any(strip_accents(word).lower() in known for word in re.findall(r"\w+", text))
+        f1_per_dir.append(print_wikiann_score(true_pos, false_pos, false_neg))
+        print_errors(sample, gold, found, true_pos, false_pos, false_neg)
+        gold_hits = [
+            (record["text"][start:end], (start, end) in got)
+            for record, expected, got in zip(sample, gold, found, strict=True)
+            for start, end in sorted(expected)
         ]
-        print(recall_line("No Greek-name token", no_greek_name))
-
-        print("Probes on synthetic_test.jsonl (PERSON spans with a Greek letter):")
-        print(
-            f"  {'probe':<15}{'spans':>7}{'recall before':>15}{'recall edited':>15}"
-            f"{'FP edited':>11}"
-        )
-        probes = run_probes(tag, probe_records)
-        for name, spans, before_recall, edited_recall, probe_fp in probes:
-            print(
-                f"  {name:<15}{spans:>7}{before_recall:>15.3f}{edited_recall:>15.3f}{probe_fp:>11}"
-            )
-        probe_per_dir.append([edited_recall for _, _, _, edited_recall, _ in probes])
-
+        print_recall_by_name(gold_hits, seen, known)
+        probe_per_dir.append(print_probes(tag, probe_records))
         print(f"Time for this directory: {time.perf_counter() - started:.1f} s")
 
     if len(args.model_dir) > 1:
-        print(f"\nMean and standard deviation over {len(args.model_dir)} directories:")
-        series = {
-            "WikiANN F1": f1_per_dir,
-            **{
-                f"{name} edited recall": [row[index] for row in probe_per_dir]
-                for index, (name, _) in enumerate(PROBES)
-            },
-        }
-        for label, values in series.items():
-            print(f"  {label:<28}{statistics.mean(values):.3f} {statistics.stdev(values):.3f}")
+        print_spread(f1_per_dir, probe_per_dir)
 
 
 if __name__ == "__main__":

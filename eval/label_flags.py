@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
-from evaluate import SAMPLE_SEED, SAMPLE_SIZE, load_records
+from records import SAMPLE_SEED, SAMPLE_SIZE, load_records
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 from greek_pii_redactor.rules import Span
