@@ -81,6 +81,7 @@ GREETINGS = {
 # A greeting may be followed by a comma before the name: "Καλημέρα, [PERSON_1]".
 GREETING_WORDS = "|".join(greeting.replace(" ", r"\s+") for greeting in GREETINGS)
 WORD_BEFORE = re.compile(rf"\b({GREETING_WORDS}),?\s+$|(\w+)\s+$", re.IGNORECASE)
+LONGEST_GREETING = max(len(greeting.split()) for greeting in GREETINGS)
 
 # Placeholder -> the forms seen in the input, each as {"text": ...}. A PERSON form also has
 # "article", the lowercase word before it. Plain dicts and lists, so json.dumps works.
@@ -128,17 +129,20 @@ def same_person(first: str, second: str) -> bool:
 def id_key(kind: str, surface: str) -> str:
     if kind == "EMAIL":
         return surface.lower()
-    return re.sub(r"[ -]", "", surface)
-
-
-def same_value(kind: str, first: str, second: str) -> bool:
-    if kind == "PERSON":
-        return same_person(first, second)
-    return id_key(kind, first) == id_key(kind, second)
+    return surface.replace(" ", "").replace("-", "")
 
 
 def word_before(text: str, position: int) -> str:
-    match = WORD_BEFORE.search(text[:position])
+    # The search starts as many words back as the longest greeting has, so it doesn't read the
+    # whole text before every name. It starts at the start of a word, or the cut tail of one would
+    # match as a word. isalnum() or "_" is what \w matches, and is faster than a regex per char.
+    start = position
+    for _ in range(LONGEST_GREETING):
+        while start > 0 and not (text[start - 1].isalnum() or text[start - 1] == "_"):
+            start -= 1
+        while start > 0 and (text[start - 1].isalnum() or text[start - 1] == "_"):
+            start -= 1
+    match = WORD_BEFORE.search(text, start, position)
     return " ".join((match.group(1) or match.group(2)).lower().split()) if match else ""
 
 
@@ -178,23 +182,38 @@ def redact(
 
     if placeholders is None:
         placeholders = {}
+    # IDs are looked up by key, so thousands of them aren't each compared to all the others. A
+    # name has no key, because same_person compares stems, so names are still compared one by one.
+    people: list[str] = []
+    ids_by_key: dict[tuple[str, str], str] = {}
+    counts = dict.fromkeys(KINDS, 0)
+    for known, forms in placeholders.items():
+        kind = known[1 : known.index("_")]
+        counts[kind] += 1
+        if kind == "PERSON":
+            people.append(known)
+        else:
+            ids_by_key[kind, id_key(kind, forms[0]["text"])] = known
     pieces: list[str] = []
     position = 0
     for span in sorted(ids + names):
         surface = text[span.start : span.end]
-        placeholder = next(
-            (
-                known
-                for known, forms in placeholders.items()
-                if known.startswith(f"[{span.kind}_")
-                and same_value(span.kind, forms[0]["text"], surface)
-            ),
-            None,
-        )
+        if span.kind == "PERSON":
+            placeholder = next(
+                (known for known in people if same_person(placeholders[known][0]["text"], surface)),
+                None,
+            )
+        else:
+            key = (span.kind, id_key(span.kind, surface))
+            placeholder = ids_by_key.get(key)
         if placeholder is None:
-            number = sum(known.startswith(f"[{span.kind}_") for known in placeholders) + 1
-            placeholder = f"[{span.kind}_{number}]"
+            counts[span.kind] += 1
+            placeholder = f"[{span.kind}_{counts[span.kind]}]"
             placeholders[placeholder] = []
+            if span.kind == "PERSON":
+                people.append(placeholder)
+            else:
+                ids_by_key[key] = placeholder
         form = {"text": surface}
         if span.kind == "PERSON":
             form["article"] = word_before(text, span.start)

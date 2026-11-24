@@ -84,18 +84,19 @@ VALIDATORS = {"AFM": afm_is_valid, "AMKA": amka_is_valid, "IBAN": iban_is_valid}
 
 def find_ids(text: str) -> list[Span]:
     accepted: list[Span] = []
-    claimed: list[Span] = []
     # Phone prefixes and IBAN groups are ASCII; a 1-to-1 swap keeps spans on the original text.
     ascii_text = re.sub(r"\d", lambda digit: str(unicodedata.digit(digit.group())), text)
+    # One flag per character, so checking a match costs its length, not the number of IDs found.
+    claimed = bytearray(len(ascii_text))
     for kind, pattern in PATTERNS:
         for match in pattern.finditer(ascii_text):
             span = Span(match.start(), match.end(), kind)
-            if any(span.start < c.end and c.start < span.end for c in claimed):
+            if 1 in claimed[span.start : span.end]:
                 continue
             valid = kind not in VALIDATORS or VALIDATORS[kind](match.group())
             # A mistyped IBAN still claims its text, or its digit groups would match as phones.
             if valid or kind == "IBAN":
-                claimed.append(span)
+                claimed[span.start : span.end] = b"\x01" * (span.end - span.start)
             if valid:
                 accepted.append(span)
     return sorted(accepted)
