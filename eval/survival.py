@@ -68,6 +68,14 @@ def ask_model(url: str, model: str, seed: int, instruction: str, message: str) -
             f"Ollama at {url} returned HTTP {error.code}: {detail}"
         ) from error
     except OSError as error:
+        # urlopen wraps a connect timeout in URLError but lets a read timeout through bare.
+        timed_out = isinstance(error, TimeoutError) or (
+            isinstance(error, urllib.error.URLError) and isinstance(error.reason, TimeoutError)
+        )
+        if timed_out:
+            raise SystemExit(
+                f"Ollama at {url} did not answer within {REQUEST_TIMEOUT_SECONDS} s"
+            ) from error
         raise SystemExit(f"Cannot reach Ollama at {url}: {error}") from error
 
     unexpected = f"Ollama at {url} sent an unexpected reply"
