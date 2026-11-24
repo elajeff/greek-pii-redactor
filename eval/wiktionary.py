@@ -44,8 +44,10 @@ def row(label: list[str], counts: dict) -> str:
         agreeing, scored = counts["forward"][case]
         cells.append(f"{agreeing / scored:>8.1%}" if scored else f"{'-':>8}")
     read = sum(counts["read-back"].values())
-    for outcome in READ_BACK:
-        cells.append(f"{counts['read-back'][outcome] / read:>8.1%}" if read else f"{'-':>8}")
+    cells.extend(
+        f"{counts['read-back'][outcome] / read:>8.1%}" if read else f"{'-':>8}"
+        for outcome in READ_BACK
+    )
     return "".join(cells)
 
 
