@@ -22,9 +22,12 @@ import urllib.request
 from collections import Counter
 from pathlib import Path
 
+from records import MODEL_DIR_HELP, load_records, require_model_dir
+
 from greek_pii_redactor.redact import KINDS, redact, restore
 
 DATA_FILE = Path("data/synthetic_test.jsonl")
+SYNTHETIC_TEST_COMMAND = "python eval/make_synthetic.py --seed 7 --split test --count 2000"
 # No example token here: a model given one copies it as its whole answer.
 INSTRUCTION = (
     "Rewrite the user's message politely, in the same language as the message. "
@@ -83,29 +86,19 @@ def main() -> None:
     parser.add_argument("--model", default="qwen3:4b-instruct")
     parser.add_argument("--count", type=int, default=100)
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--model-dir", type=Path, help="weights from train/train_tagger.py")
+    parser.add_argument("--model-dir", type=Path, help=MODEL_DIR_HELP)
     parser.add_argument("--url", default="http://localhost:11434")
     args = parser.parse_args()
-    if not DATA_FILE.exists():
-        raise SystemExit(
-            f"{DATA_FILE} not found. Create it with: "
-            "python eval/make_synthetic.py --seed 7 --split test --count 2000"
-        )
-    if args.model_dir and not args.model_dir.is_dir():
-        raise SystemExit(
-            f"{args.model_dir} not found. Download it with: "
-            f"hf download elajeff/greek-pii-redactor-ner --local-dir {args.model_dir}"
-        )
+    records = load_records(DATA_FILE.parent, DATA_FILE.name, SYNTHETIC_TEST_COMMAND)
 
     detect_names = None
     if args.model_dir:
+        require_model_dir(args.model_dir)
         # Imported here so the script runs without torch and transformers installed.
         from greek_pii_redactor.tagger import load_tagger
 
         detect_names = load_tagger(args.model_dir)
 
-    with DATA_FILE.open(encoding="utf-8") as file:
-        records = [json.loads(line) for line in file]
     if args.count > len(records):
         raise SystemExit(f"--count {args.count} exceeds the {len(records)} records in {DATA_FILE}")
     sample = random.Random(args.seed).sample(records, args.count)
