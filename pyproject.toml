@@ -14,7 +14,7 @@ eval = [
     "pyarrow==26.0.1",
     "spacy==3.8.18",
 ]
-train = ["torch==2.15.0", "transformers==5.23.0"]
+tagger = ["torch==2.15.0", "transformers==5.23.0"]
 names = ["scikit-learn==1.9.1"]
 serve = ["fastapi==0.165.0", "httpx==0.28.1", "uvicorn==0.54.0"]
 

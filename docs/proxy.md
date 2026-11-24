@@ -5,7 +5,7 @@
 `serve` runs a local server that speaks the OpenAI chat completions API. Point a client at it instead of the provider: it redacts every message, forwards the request to `--upstream`, and restores the reply.
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[serve,train,names]"
+.\.venv\Scripts\python.exe -m pip install -e ".[serve,tagger,names]"
 .\.venv\Scripts\greek-pii-redactor.exe serve --upstream http://localhost:11434/v1 --model-dir C:\Users\you\weights\xlmr-person --names-dir C:\Users\you\weights\names
 ```
 
@@ -31,4 +31,4 @@ Installing the package adds a `greek-pii-redactor` command. `redact` prints the 
 .\.venv\Scripts\greek-pii-redactor.exe restore reply.txt --mapping letter.txt.mapping.json --names-dir C:\Users\you\weights\names
 ```
 
-`--model-dir` needs the `train` extra (torch, transformers). Without it only IDs are replaced. `--names-dir` takes the name forms built by `train/train_inflection.py` and needs the `names` extra (scikit-learn); without it restore uses the rules in `inflect.py`. Its `models.joblib` is a pickle, which can run code when loaded, so only pass a names dir you built yourself. The mapping file holds the original personal data, so treat it like the original text.
+`--model-dir` needs the `tagger` extra (torch, transformers). Without it only IDs are replaced. `--names-dir` takes the name forms built by `train/train_inflection.py` and needs the `names` extra (scikit-learn); without it restore uses the rules in `inflect.py`. Its `models.joblib` is a pickle, which can run code when loaded, so only pass a names dir you built yourself. The mapping file holds the original personal data, so treat it like the original text.

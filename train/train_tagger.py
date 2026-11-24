@@ -11,7 +11,7 @@ records (for a learning curve) and --seed seeds Python's and torch's random gene
 records out, to score them with a model that never saw them. Each epoch's numbers go to
 epochs.json in --out.
 
-Setup: pip install -e ".[train]", then the data scripts named in eval/evaluate.py.
+Setup: pip install -e ".[tagger]", then the data scripts named in eval/evaluate.py.
 Run (the weights directory must be outside the repo, nothing from it is committed):
     python train/train_tagger.py --out C:/Users/me/greek-pii-redactor-weights/xlmr-person
 """
