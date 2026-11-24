@@ -2,6 +2,7 @@
 check digit."""
 
 import re
+import unicodedata
 from datetime import date
 from typing import NamedTuple
 
@@ -84,8 +85,10 @@ VALIDATORS = {"AFM": afm_is_valid, "AMKA": amka_is_valid, "IBAN": iban_is_valid}
 def find_ids(text: str) -> list[Span]:
     accepted: list[Span] = []
     claimed: list[Span] = []
+    # Phone prefixes and IBAN groups are ASCII; a 1-to-1 swap keeps spans on the original text.
+    ascii_text = re.sub(r"\d", lambda digit: str(unicodedata.digit(digit.group())), text)
     for kind, pattern in PATTERNS:
-        for match in pattern.finditer(text):
+        for match in pattern.finditer(ascii_text):
             span = Span(match.start(), match.end(), kind)
             if any(span.start < c.end and c.start < span.end for c in claimed):
                 continue

@@ -8,7 +8,7 @@
 [Span(start=4, end=13, kind='AFM'), Span(start=20, end=30, kind='PHONE'), Span(start=32, end=50, kind='EMAIL')]
 ```
 
-ΑΦΜ, ΑΜΚΑ and IBAN are only reported when their check digit is right, so a mistyped number is left alone. Phone numbers have no check digit, so any 10-digit number with the right start (69 or 2, optional +30 or 0030) counts.
+ΑΦΜ, ΑΜΚΑ and IBAN are only reported when their check digit is right, so a mistyped number is left alone. Phone numbers have no check digit, so any 10-digit number with the right start (69 or 2, optional +30 or 0030) counts. Digits from other scripts, such as fullwidth `６９` or Arabic-Indic `٦٩`, are read as 0-9.
 
 `redact` swaps what it finds for placeholders and `restore` puts it back in the LLM's reply:
 
