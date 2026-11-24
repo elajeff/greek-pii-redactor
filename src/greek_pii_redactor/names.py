@@ -154,12 +154,13 @@ def apply_edit(token: str, edit: Edit, first_name: bool) -> str | None:
 
 
 def derive_edit(source: str, target: str, first_name: bool) -> Edit:
-    plain_prefix = len(commonprefix([strip_accents(source), strip_accents(target)]))
+    # The edit cuts and appends characters, so commonprefix comparing characters is what's wanted.
+    plain_prefix = len(commonprefix([strip_accents(source), strip_accents(target)]))  # noqa: RUF071
     for shift in SHIFTS:
         edit = (len(source) - plain_prefix, target[plain_prefix:], shift)
         if apply_edit(source, edit, first_name) == target:
             return edit
-    prefix = len(commonprefix([source, target]))
+    prefix = len(commonprefix([source, target]))  # noqa: RUF071
     return (len(source) - prefix, target[prefix:], 0)
 
 
