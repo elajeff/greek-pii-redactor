@@ -7,7 +7,7 @@ synthetic_test.jsonl (lowercased name, surname alone, no article before the name
 directories it ends with the mean and standard deviation of WikiANN F1 and of each probe's edited
 recall.
 
-Setup: pip install -e ".[train]", a directory trained with train/train_tagger.py (it reads the
+Setup: pip install -e ".[tagger]", a directory trained with train/train_tagger.py (it reads the
 epochs.json written there, which the published weights don't have), plus
 data/wiktionary_names.jsonl from eval/download_names.py.
 Run:

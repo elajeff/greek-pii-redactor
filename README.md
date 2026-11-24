@@ -50,7 +50,7 @@ reply = client.chat.completions.create(
 print(reply.choices[0].message.content)
 ```
 
-The key is passed on to the upstream as the `Authorization` header; Ollama ignores it, a hosted provider needs its real key there. Started like this, the proxy only replaces IDs. To replace names too, install the `train` extra (torch and transformers), download the [name tagger](https://huggingface.co/elajeff/greek-pii-redactor-ner) with `hf download elajeff/greek-pii-redactor-ner --local-dir tagger`, and add `--model-dir tagger`. With it, the upstream gets `Γράψε ένα σύντομο ευχαριστήριο email προς τον [PERSON_1] (ΑΦΜ [AFM_1]).` and the name and ΑΦΜ are put back in the reply.
+The key is passed on to the upstream as the `Authorization` header; Ollama ignores it, a hosted provider needs its real key there. Started like this, the proxy only replaces IDs. To replace names too, install the `tagger` extra (torch and transformers), download the [name tagger](https://huggingface.co/elajeff/greek-pii-redactor-ner) with `hf download elajeff/greek-pii-redactor-ner --local-dir tagger`, and add `--model-dir tagger`. With it, the upstream gets `Γράψε ένα σύντομο ευχαριστήριο email προς τον [PERSON_1] (ΑΦΜ [AFM_1]).` and the name and ΑΦΜ are put back in the reply.
 
 ## Tests
 

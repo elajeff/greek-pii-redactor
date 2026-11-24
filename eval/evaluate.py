@@ -10,7 +10,7 @@ Presidio's phone region is set to GR (PHONE_REGIONS).
 Setup: pip install -e ".[eval]" and then
     python -m spacy download el_core_news_lg
 The model is not on PyPI. Its licence is CC BY-NC-SA 3.0, non-commercial use only.
-For the tagger: pip install -e ".[train]", download it with
+For the tagger: pip install -e ".[tagger]", download it with
     hf download elajeff/greek-pii-redactor-ner --local-dir <weights dir outside the repo>
 and pass the same directory as --model-dir. Training it with train/train_tagger.py (needs a CUDA
 GPU) is only needed to change its data or seed.

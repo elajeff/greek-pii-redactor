@@ -8,7 +8,7 @@ It needs a CUDA GPU. The default PyPI torch wheel on Windows is CPU-only, so ins
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cu132
-.\.venv\Scripts\python.exe -m pip install -e ".[train,eval]"
+.\.venv\Scripts\python.exe -m pip install -e ".[tagger,eval]"
 .\.venv\Scripts\python.exe eval/download_ner.py
 .\.venv\Scripts\python.exe eval/make_synthetic.py --seed 11 --split train --count 2000 --out data/synthetic_train.jsonl
 .\.venv\Scripts\python.exe train/train_tagger.py --out C:\Users\you\weights\xlmr-person
