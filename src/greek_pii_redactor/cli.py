@@ -75,7 +75,22 @@ def run_restore(args: argparse.Namespace) -> None:
         placeholders = json.loads(read_text(args.mapping))
     except json.JSONDecodeError as error:
         raise SystemExit(f"{args.mapping} is not valid JSON: {error}") from error
-    if not isinstance(placeholders, dict):
+    # restore reads the first form's text, and each form of a PERSON with its article; a blank
+    # PERSON text fails when the gender is read from it.
+    if not isinstance(placeholders, dict) or not all(
+        isinstance(forms, list)
+        and forms
+        and all(
+            isinstance(form, dict)
+            and isinstance(form.get("text"), str)
+            and (
+                not placeholder.startswith("[PERSON_")
+                or (isinstance(form.get("article"), str) and form["text"].strip())
+            )
+            for form in forms
+        )
+        for placeholder, forms in placeholders.items()
+    ):
         raise SystemExit(f"{args.mapping} is not a mapping written by the redact command")
     print(restore(read_text(args.file), placeholders, names), end="")
 

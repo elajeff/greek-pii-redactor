@@ -1,4 +1,4 @@
-"""Reads the JSONL data files the eval scripts share and checks the tagger weights directory."""
+"""Reads the JSONL data files the eval scripts share and checks the tagger weights directories."""
 
 import json
 from pathlib import Path
@@ -21,4 +21,12 @@ def require_model_dir(model_dir: Path) -> None:
         raise SystemExit(
             f"{model_dir} not found. Download it with: "
             f"hf download elajeff/greek-pii-redactor-ner --local-dir {model_dir}"
+        )
+
+
+def require_epochs_file(model_dir: Path) -> None:
+    """train/train_tagger.py writes epochs.json; the published weights have none."""
+    if not (model_dir / "epochs.json").is_file():
+        raise SystemExit(
+            f"{model_dir / 'epochs.json'} not found. Train: python train/train_tagger.py"
         )

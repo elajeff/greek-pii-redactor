@@ -8,6 +8,7 @@ AFM = "123456783"
 PHONE = "6912345678"
 EMAIL = "nikos@example.gr"
 TEXT = f"Ο πελάτης έδωσε ΑΦΜ {AFM}.\r\nΤηλέφωνο {PHONE}, email {EMAIL}.\n".encode()
+REPLY = "Ο [PERSON_1] έστειλε [EMAIL_1].".encode()
 
 
 def run(cwd: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
@@ -51,8 +52,29 @@ def test_redact_then_restore_gives_the_file_back(tmp_path: Path) -> None:
             {"message.txt": TEXT, "mapping.json": b'["[EMAIL_1]", "a@b.gr"]'},
             "mapping.json",
         ),
+        *[
+            (
+                ["restore", "reply.txt", "--mapping", "mapping.json"],
+                {"reply.txt": REPLY, "mapping.json": mapping.encode()},
+                "mapping.json",
+            )
+            for mapping in [
+                '{"[EMAIL_1]": "a@b.gr"}',
+                '{"[EMAIL_1]": ["a@b.gr"]}',
+                '{"[EMAIL_1]": []}',
+                '{"[PERSON_1]": [{"text": "Νίκος"}]}',
+            ]
+        ],
     ],
-    ids=["mapping exists", "mapping not json", "mapping is a list"],
+    ids=[
+        "mapping exists",
+        "mapping not json",
+        "mapping is a list",
+        "forms are a string",
+        "forms are strings",
+        "no forms",
+        "person form without article",
+    ],
 )
 def test_bad_input_is_refused_with_a_message(
     tmp_path: Path, args: list[str], files: dict[str, bytes], named_file: str

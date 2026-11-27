@@ -2,6 +2,7 @@
 check digit."""
 
 import re
+import string
 import unicodedata
 from datetime import date
 from typing import NamedTuple
@@ -12,6 +13,11 @@ AFM_MODULUS = 11
 IBAN_LENGTH = 27  # ISO 13616 length for Greece
 IBAN_MODULUS = 97
 LUHN_MODULUS = 10
+# Fullwidth Ａ-Ｚ and ａ-ｚ are A-Z and a-z this far up (Ａ is U+FF21).
+FULLWIDTH_OFFSET = 0xFEE0
+FULLWIDTH_TO_ASCII = str.maketrans(
+    {chr(ord(letter) + FULLWIDTH_OFFSET): letter for letter in string.ascii_letters}
+)
 
 
 class Span(NamedTuple):
@@ -84,8 +90,10 @@ VALIDATORS = {"AFM": afm_is_valid, "AMKA": amka_is_valid, "IBAN": iban_is_valid}
 
 def find_ids(text: str) -> list[Span]:
     accepted: list[Span] = []
-    # Phone prefixes and IBAN groups are ASCII; a 1-to-1 swap keeps spans on the original text.
+    # The patterns match ASCII digits and letters; a 1-to-1 swap keeps spans on the original
+    # text.
     ascii_text = re.sub(r"\d", lambda digit: str(unicodedata.digit(digit.group())), text)
+    ascii_text = ascii_text.translate(FULLWIDTH_TO_ASCII)
     # One flag per character, so checking a match costs its length, not the number of IDs found.
     claimed = bytearray(len(ascii_text))
     for kind, pattern in PATTERNS:

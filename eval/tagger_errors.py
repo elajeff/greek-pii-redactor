@@ -24,7 +24,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from records import SAMPLE_SEED, SAMPLE_SIZE, load_records
+from records import SAMPLE_SEED, SAMPLE_SIZE, load_records, require_epochs_file
 
 from greek_pii_redactor.inflect import accents_by_plain_form, strip_accents
 from greek_pii_redactor.rules import Span
@@ -261,10 +261,7 @@ def main() -> None:
     # Redirected output on Windows is cp1252, which cannot print the Greek examples.
     sys.stdout.reconfigure(encoding="utf-8")
     for model_dir in args.model_dir:
-        if not (model_dir / "epochs.json").is_file():
-            raise SystemExit(
-                f"{model_dir / 'epochs.json'} not found. Train: python train/train_tagger.py"
-            )
+        require_epochs_file(model_dir)
 
     wikiann = load_records(args.data_dir, "wikiann_el_test.jsonl", DOWNLOAD_NER)
     sample = random.Random(SAMPLE_SEED).sample(wikiann, SAMPLE_SIZE)
