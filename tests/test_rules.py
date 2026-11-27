@@ -84,3 +84,8 @@ def test_finds_ids_written_in_other_digits(digits: str) -> None:
     assert found == [(afm, "AFM"), (amka, "AMKA"), (iban, "IBAN"), (phone, "PHONE")]
     redacted, placeholders = redact(text)
     assert restore(redacted, placeholders) == text
+
+
+def test_finds_iban_with_fullwidth_letters() -> None:
+    text = "IBAN ＧＲ16 0110 1250 0000 0001 2300 695."
+    assert find_ids(text) == [Span(5, 38, "IBAN")]

@@ -202,6 +202,8 @@ def test_id_wins_over_overlapping_name_span() -> None:
         ("Η Κλαρα ήρθε.", ("Κλαρα",), "Το βιβλίο της [PERSON_1].", "Το βιβλίο της Κλαρας."),
         # The diaeresis of the name as seen stays, though the listed form (Χάιδω) has none.
         ("Η ΧΑΪΔΩ ήρθε.", ("ΧΑΪΔΩ",), "Το βιβλίο της [PERSON_1].", "Το βιβλίο της ΧΑΪΔΩΣ."),
+        # A capital Ϊ breaks the diphthong like ϊ; an accent on it gives the lowercase ΐ.
+        ("Το σπίτι του ΓαΪπούλου.", ("ΓαΪπούλου",), "Ο [PERSON_1] ήρθε.", "Ο Γαΐπουλος ήρθε."),
         # A listed name whose accents disagree (Ίωνα or Ιωνά) stays as seen, not guessed.
         ("Μίλησα με τον ΙΩΝΑ.", ("ΙΩΝΑ",), "Του [PERSON_1].", "Του ΙΩΝΑ."),
         # A seen form with an accent decides before the -ο rule for unlisted names.

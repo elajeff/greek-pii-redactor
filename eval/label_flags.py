@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
-from records import SAMPLE_SEED, SAMPLE_SIZE, load_records
+from records import SAMPLE_SEED, SAMPLE_SIZE, load_records, require_epochs_file
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 from greek_pii_redactor.rules import Span
@@ -103,6 +103,7 @@ def score_by_fold(fold_dirs: dict[int, Path], records: list[dict]) -> list[Score
 def read_fold_dirs(model_dirs: list[Path]) -> dict[int, Path]:
     fold_dirs: dict[int, Path] = {}
     for model_dir in model_dirs:
+        require_epochs_file(model_dir)
         fold = json.loads((model_dir / "epochs.json").read_text(encoding="utf-8")).get(
             "leave_out_fold"
         )
@@ -207,6 +208,8 @@ def main() -> None:
     parser.add_argument("--fold-model-dir", type=Path, nargs=FOLDS, required=True)
     parser.add_argument("--out", type=Path, required=True, help="JSON file for the cases")
     args = parser.parse_args()
+    if not torch.cuda.is_available():
+        raise SystemExit("No CUDA GPU found. Scoring on the CPU is not supported.")
     if not args.out.parent.is_dir():
         raise SystemExit(f"{args.out.parent} does not exist")
     for model_dir in args.test_model_dir + args.fold_model_dir:

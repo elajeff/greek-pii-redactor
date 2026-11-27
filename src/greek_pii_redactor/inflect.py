@@ -45,13 +45,17 @@ FEMALE_FIRST_ENDINGS = {
 LONE_FEMALE_FIRST_ENDINGS = ("α", "ω", "ώ")
 FEMALE_GENITIVE_ENDINGS = ("ας", "άς", "ης", "ής", "ως", "ώς")
 
-ACCENT = dict(zip("αεηιουωΑΕΗΙΟΥΩϊϋ", "άέήίόύώΆΈΉΊΌΎΏΐΰ", strict=True))
-ACCENTED = set(ACCENT.values())
+UNACCENTED_VOWELS = "αεηιουωΑΕΗΙΟΥΩϊϋ"
+ACCENTED_VOWELS = "άέήίόύώΆΈΉΊΌΎΏΐΰ"
 # Drops the tonos only: ΐ and ΰ keep their diaeresis, which strip_accents would remove too.
-NO_TONOS = str.maketrans("".join(ACCENT.values()), "".join(ACCENT))
+NO_TONOS = str.maketrans(ACCENTED_VOWELS, UNACCENTED_VOWELS)
+# Unicode has no capital ι or υ with both diaeresis and tonos, so an accent on Ϊ or Ϋ gives the
+# lowercase ΐ or ΰ, still one character for one letter.
+ACCENT = dict(zip(UNACCENTED_VOWELS, ACCENTED_VOWELS, strict=True)) | {"Ϊ": "ΐ", "Ϋ": "ΰ"}
+ACCENTED = set(ACCENT.values())
 VOWELS = set(ACCENT) | ACCENTED
 DIPHTHONGS = {"αι", "ει", "οι", "υι", "ου", "αυ", "ευ", "ηυ"}
-DIAERESIS = "ϊϋΐΰ"  # breaks a diphthong: Βαϊτσόπουλος has four syllables before -λος
+DIAERESIS = "ϊϋΐΰΪΫ"  # breaks a diphthong: Βαϊτσόπουλος has four syllables before -λος
 # A first name in -ιος is learned (Γεώργιος, Γεωργίου: the ι is a syllable); a surname is folk
 # (Μπούσιος, Μπούσιου: the ι joins the next vowel).
 LEARNED_FINAL_IOS = ("ιος", "ιου", "ιο", "ιε")
