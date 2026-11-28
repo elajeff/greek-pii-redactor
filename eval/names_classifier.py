@@ -19,9 +19,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from greek_pii_redactor.inflect import CASES, inflect_name, nominative
-from greek_pii_redactor.names import MANUAL_NAMES, Names, load_names, read_names
+from greek_pii_redactor.names import HOLDOUT_FILE, MANUAL_NAMES, Names, load_names, read_names
 
-HOLDOUT_FILE = "holdout.jsonl"  # written by train/train_inflection.py
 THRESHOLDS = (0.5, 0.8, 0.9, 0.95, 0.99)
 FORWARD_THRESHOLDS = (0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
 # (word, role, gender, case, forms accepted), checked by hand.
@@ -205,6 +204,11 @@ def main() -> None:
     # Redirected output on Windows is cp1252, which cannot print the Greek examples.
     sys.stdout.reconfigure(encoding="utf-8")
     holdout = args.names_dir / HOLDOUT_FILE
+    if not holdout.is_file():
+        raise SystemExit(
+            f"{holdout} not found. Create it with: "
+            f"python train/train_inflection.py --out {args.names_dir}"
+        )
     if holdout.stat().st_size == 0:
         raise SystemExit(f"{holdout} is empty: train with --holdout above 0 to score")
     # read_names adds the hand-checked names, which train_inflection.py always trains on.

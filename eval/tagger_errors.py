@@ -16,7 +16,6 @@ Run:
 
 import argparse
 import json
-import random
 import re
 import statistics
 import sys
@@ -24,22 +23,24 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from records import SAMPLE_SEED, SAMPLE_SIZE, load_records, require_epochs_file
+from records import (
+    SAMPLE_SEED,
+    SAMPLE_SIZE,
+    SYNTHETIC_TEST,
+    SYNTHETIC_TRAIN,
+    WIKIANN_TEST,
+    WIKIANN_TRAIN,
+    WIKIANN_VALIDATION,
+    fixed_sample,
+    load_records,
+    require_epochs_file,
+)
 
 from greek_pii_redactor.inflect import accents_by_plain_form, strip_accents
 from greek_pii_redactor.rules import Span
 from greek_pii_redactor.tagger import load_tagger
 
-DOWNLOAD_NER = "python eval/download_ner.py"
-TRAIN_FILES = (
-    ("wikiann_el_train.jsonl", DOWNLOAD_NER),
-    ("wikiann_el_validation.jsonl", DOWNLOAD_NER),
-    ("synthetic_train.jsonl", "python eval/make_synthetic.py --seed 11 --split train --count 2000"),
-)
-SYNTHETIC_TEST = (
-    "synthetic_test.jsonl",
-    "python eval/make_synthetic.py --seed 7 --split test --count 2000",
-)
+TRAIN_FILES = (WIKIANN_TRAIN, WIKIANN_VALIDATION, SYNTHETIC_TRAIN)
 EXAMPLE_COUNT = 10  # enough to see the pattern in an error bucket without filling the screen
 ARTICLES = ("ο", "η", "του", "της", "τον", "την")
 GREEK_LETTER = re.compile("[Ά-ώ]")
@@ -263,8 +264,7 @@ def main() -> None:
     for model_dir in args.model_dir:
         require_epochs_file(model_dir)
 
-    wikiann = load_records(args.data_dir, "wikiann_el_test.jsonl", DOWNLOAD_NER)
-    sample = random.Random(SAMPLE_SEED).sample(wikiann, SAMPLE_SIZE)
+    sample = fixed_sample(load_records(args.data_dir, *WIKIANN_TEST))
     gold = [person_pairs(record) for record in sample]
     probe_records = load_records(args.data_dir, *SYNTHETIC_TEST)
     seen = seen_names(args.data_dir)

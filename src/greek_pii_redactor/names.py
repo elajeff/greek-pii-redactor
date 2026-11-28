@@ -35,6 +35,7 @@ Edit = tuple[int, str, int]  # letters cut off the end, ending added, accent shi
 
 LEXICON_FILE = "lexicon.jsonl"
 MODELS_FILE = "models.joblib"
+HOLDOUT_FILE = "holdout.jsonl"  # names left out of training, for eval/names_classifier.py
 SHIFTS = (0, 1, -1)
 # The longest endings used as features, as written and without accents.
 WRITTEN_ENDINGS = 5

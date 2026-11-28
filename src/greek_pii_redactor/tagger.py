@@ -11,7 +11,7 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 
-from greek_pii_redactor.rules import Span
+from greek_pii_redactor.rules import Span, merge_names
 
 LABELS = ("O", "B-PERSON", "I-PERSON")
 OUTSIDE, BEGIN, INSIDE = range(len(LABELS))
@@ -76,17 +76,8 @@ def tag_texts(
     ):
         found[text_index] += decode_spans(window_offsets, window_labels)
 
-    merged_per_text = []
-    for spans in found:
-        merged: list[Span] = []
-        for span in sorted(spans):
-            # The same name seen in two windows, or cut in one and whole in the other.
-            if merged and span.start < merged[-1].end:
-                merged[-1] = Span(merged[-1].start, max(merged[-1].end, span.end), "PERSON")
-            else:
-                merged.append(span)
-        merged_per_text.append(merged)
-    return merged_per_text
+    # The same name seen in two windows, or cut in one and whole in the other.
+    return [merge_names(spans) for spans in found]
 
 
 def load_tagger(model_dir: Path) -> Callable[[str], list[Span]]:

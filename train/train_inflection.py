@@ -25,6 +25,7 @@ from sklearn.pipeline import make_pipeline
 
 from greek_pii_redactor.inflect import CASES
 from greek_pii_redactor.names import (
+    HOLDOUT_FILE,
     LEXICON_FILE,
     MANUAL_NAMES,
     MODELS_FILE,
@@ -34,7 +35,6 @@ from greek_pii_redactor.names import (
     read_names,
 )
 
-HOLDOUT_FILE = "holdout.jsonl"
 DIRECTIONS = ("forward", "reverse")  # nominative to a case form, and back
 HASH_BYTES = 8  # 64 bits of the hash: a share far finer than any --holdout step
 

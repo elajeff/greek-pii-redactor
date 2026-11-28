@@ -20,19 +20,26 @@ Run:
 import argparse
 import json
 import random
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import torch
-from records import SAMPLE_SEED, SAMPLE_SIZE, load_records, require_epochs_file
+from records import (
+    FOLDS,
+    SAMPLE_SIZE,
+    SYNTHETIC_TEST,
+    WIKIANN_TEST,
+    WIKIANN_TRAIN,
+    fixed_sample,
+    fold_of,
+    load_records,
+    person_spans,
+    require_epochs_file,
+)
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 from greek_pii_redactor.rules import Span
-from greek_pii_redactor.tagger import decode_spans
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "train"))
-from train_tagger import FOLDS, fold_of, person_spans, tokenize
+from greek_pii_redactor.tagger import MAX_LENGTH, decode_spans
 
 TRAIN_FLAG_SAMPLE = 50  # there are hundreds of train flags, too many to read by hand
 TRAIN_SAMPLE_SEED = 11
@@ -44,8 +51,6 @@ BATCH_SIZE = 64  # no gradients are stored, so this fits in 12 GB
 
 GOLD_NOT_NAME = "gold_not_name"
 UNLABELLED_NAME = "unlabelled_name"
-NER_COMMAND = "python eval/download_ner.py"
-SYNTHETIC_COMMAND = "python eval/make_synthetic.py --seed 7 --split test --count 2000"
 
 
 @dataclass
@@ -65,7 +70,12 @@ class Flag:
 def score_sentences(model_dir: Path, records: list[dict]) -> list[Scored]:
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
     model = AutoModelForTokenClassification.from_pretrained(model_dir).to("cuda").eval()
-    encoded = tokenize(tokenizer, records)
+    encoded = tokenizer(
+        [record["text"] for record in records],
+        truncation=True,
+        max_length=MAX_LENGTH,
+        return_offsets_mapping=True,
+    )
     scored = []
     for first in range(0, len(records), BATCH_SIZE):
         ids = encoded["input_ids"][first : first + BATCH_SIZE]
@@ -218,13 +228,12 @@ def main() -> None:
     fold_dirs = read_fold_dirs(args.fold_model_dir)
     cases = []
 
-    test_records = load_records(args.data_dir, "wikiann_el_test.jsonl", NER_COMMAND)
-    test_records = random.Random(SAMPLE_SEED).sample(test_records, SAMPLE_SIZE)
+    test_records = fixed_sample(load_records(args.data_dir, *WIKIANN_TEST))
     test_scored = score_with_all(args.test_model_dir, test_records)
     test_flags = flag_set("test", test_records, test_scored)
     cases += [case("test", index, test_records[index], flag) for index, flag in test_flags]
 
-    train_records = load_records(args.data_dir, "wikiann_el_train.jsonl", NER_COMMAND)
+    train_records = load_records(args.data_dir, *WIKIANN_TRAIN)
     train_flags = flag_set("train", train_records, score_by_fold(fold_dirs, train_records))
     picked = random.Random(TRAIN_SAMPLE_SEED).sample(
         train_flags, min(TRAIN_FLAG_SAMPLE, len(train_flags))
@@ -235,7 +244,7 @@ def main() -> None:
     random_sample = random.Random(RANDOM_SAMPLE_SEED).sample(range(SAMPLE_SIZE), RANDOM_SAMPLE)
     cases += [case("random", index, test_records[index], None) for index in sorted(random_sample)]
 
-    synthetic = load_records(args.data_dir, "synthetic_test.jsonl", SYNTHETIC_COMMAND)
+    synthetic = load_records(args.data_dir, *SYNTHETIC_TEST)
     sample = random.Random(SYNTHETIC_SAMPLE_SEED).sample(range(len(synthetic)), SYNTHETIC_SAMPLE)
     cases += [case("synthetic", index, synthetic[index], None) for index in sorted(sample)]
 

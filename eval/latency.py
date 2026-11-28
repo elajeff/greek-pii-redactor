@@ -1,16 +1,16 @@
 """Measures the time the proxy adds to a request, not the time the model takes.
 
-Takes a seeded sample of data/synthetic_test.jsonl (python eval/make_synthetic.py --seed 7
---split test --count 2000). The proxy runs in this process in front of a fake upstream that
-answers at once, so the numbers are redaction, restore and the proxy's own handling. For each
-sentence the same request is also sent straight to the fake upstream; the added time is the
-difference of the two round trips. There is no network and no uvicorn in between, so a real
-deployment adds a little more. Reports IDs only, and with --model-dir the PERSON tagger too.
+Takes a seeded sample of synthetic_test.jsonl in --data-dir, default data/ (python
+eval/make_synthetic.py --seed 7 --split test --count 2000). The proxy runs in this process in front
+of a fake upstream that answers at once, so the numbers are redaction, restore and the proxy's own
+handling. For each sentence the same request is also sent straight to the fake upstream; the
+added time is the difference of the two round trips. There is no network and no uvicorn in
+between, so a real deployment adds a little more. Reports IDs only, and with --model-dir the
+PERSON tagger too.
 """
 
 import argparse
 import asyncio
-import random
 import statistics
 import time
 from collections.abc import Callable
@@ -19,13 +19,17 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from records import MODEL_DIR_HELP, load_records, require_model_dir
+from records import (
+    MODEL_DIR_HELP,
+    SYNTHETIC_TEST,
+    load_records,
+    require_model_dir,
+    seeded_sample,
+)
 
 from greek_pii_redactor.proxy import create_app
 from greek_pii_redactor.rules import Span
 
-DATA_FILE = Path("data/synthetic_test.jsonl")
-SYNTHETIC_TEST_COMMAND = "python eval/make_synthetic.py --seed 7 --split test --count 2000"
 ENDPOINT = "http://proxy/v1/chat/completions"
 # The first requests load kernels and warm caches; they are not what a running proxy costs.
 WARMUP_REQUESTS = 5
@@ -76,17 +80,18 @@ def report(label: str, added: list[float]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--count", type=int, default=200)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--model-dir", type=Path, help=MODEL_DIR_HELP)
     args = parser.parse_args()
-    records = load_records(DATA_FILE.parent, DATA_FILE.name, SYNTHETIC_TEST_COMMAND)
+    file_name, command = SYNTHETIC_TEST
+    records = load_records(args.data_dir, file_name, command)
     if args.model_dir:
         require_model_dir(args.model_dir)
 
-    if args.count > len(records):
-        raise SystemExit(f"--count {args.count} exceeds the {len(records)} records in {DATA_FILE}")
-    texts = [record["text"] for record in random.Random(args.seed).sample(records, args.count)]
+    sample = seeded_sample(records, args.count, args.seed, args.data_dir / file_name)
+    texts = [record["text"] for record in sample]
 
     print(f"{args.count} requests, seed {args.seed}, added time per request (proxy minus direct)")
     report("IDs only", asyncio.run(added_milliseconds(texts, None)))

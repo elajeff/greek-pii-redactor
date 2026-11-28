@@ -1,5 +1,5 @@
 """Finds ΑΦΜ, ΑΜΚΑ, IBAN, phone numbers and emails with regexes; the first three need a valid
-check digit."""
+check digit. Also holds the Span type every detector returns and the merge of overlapping names."""
 
 import re
 import string
@@ -24,6 +24,17 @@ class Span(NamedTuple):
     start: int
     end: int
     kind: str
+
+
+def merge_names(names: list[Span]) -> list[Span]:
+    """Overlapping name spans become one PERSON span."""
+    merged: list[Span] = []
+    for name in sorted(names):
+        if merged and name.start < merged[-1].end:
+            merged[-1] = Span(merged[-1].start, max(merged[-1].end, name.end), "PERSON")
+        else:
+            merged.append(name)
+    return merged
 
 
 AFM_PATTERN = re.compile(rf"(?<!\d)\d{{{AFM_DIGITS}}}(?!\d)")
