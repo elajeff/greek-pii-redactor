@@ -21,7 +21,7 @@ from greek_pii_redactor.inflect import (
     strip_accents,
 )
 from greek_pii_redactor.names import Names
-from greek_pii_redactor.rules import Span, find_ids, to_ascii
+from greek_pii_redactor.rules import Span, find_ids, merge_names, to_ascii
 
 KINDS = ("PERSON", "AFM", "AMKA", "IBAN", "PHONE", "EMAIL")
 PLACEHOLDER_PATTERN = re.compile(rf"\[({'|'.join(KINDS)})_\d+\]")
@@ -178,12 +178,7 @@ def redact(
     # The rules are exact and the tagger is a guess, so a name span that overlaps an ID is dropped.
     detected = [n for n in detected if not any(n.start < i.end and i.start < n.end for i in ids)]
     # Overlapping name spans become one, so no tail of a name is left in the output.
-    names: list[Span] = []
-    for name in sorted(detected):
-        if names and name.start < names[-1].end:
-            names[-1] = Span(names[-1].start, max(names[-1].end, name.end), "PERSON")
-        else:
-            names.append(name)
+    names = merge_names(detected)
 
     if placeholders is None:
         placeholders = {}

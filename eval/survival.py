@@ -1,10 +1,11 @@
 """Measures how many placeholders a local Ollama model returns unchanged when it rewrites text.
 
-Takes a seeded sample of data/synthetic_test.jsonl (python eval/make_synthetic.py --seed 7
---split test --count 2000), redacts each sentence, asks the model to rewrite it politely, then
-counts the placeholders still in the reply and the records whose originals come back through
-restore. The "restored" column covers all kinds: for the ID kinds the original string must appear
-as a whole word; for PERSON any form of the name seen in the input counts, not the exact case.
+Takes a seeded sample of synthetic_test.jsonl in --data-dir, default data/ (python
+eval/make_synthetic.py --seed 7 --split test --count 2000), redacts each sentence, asks the model
+to rewrite it politely, then counts the placeholders still in the reply and the records whose
+originals come back through restore. The "restored" column covers all kinds: for the ID kinds the
+original string must appear as a whole word; for PERSON any form of the name seen in the input
+counts, not the exact case.
 The request uses temperature 0 and the --seed value, but Ollama's replies can still differ
 slightly from run to run.
 With --model-dir the PERSON tagger is used too; without it only IDs are redacted, so PERSON
@@ -14,90 +15,40 @@ Also reports a round trip of the redacted text itself, which does not depend on 
 """
 
 import argparse
-import json
-import random
 import re
-import urllib.error
-import urllib.request
 from collections import Counter
 from pathlib import Path
 
-from records import MODEL_DIR_HELP, load_records, require_model_dir
+from ollama_chat import ask_model
+from records import (
+    MODEL_DIR_HELP,
+    SYNTHETIC_TEST,
+    load_records,
+    require_model_dir,
+    seeded_sample,
+)
 
 from greek_pii_redactor.redact import KINDS, redact, restore
 
-DATA_FILE = Path("data/synthetic_test.jsonl")
-SYNTHETIC_TEST_COMMAND = "python eval/make_synthetic.py --seed 7 --split test --count 2000"
 # No example token here: a model given one copies it as its whole answer.
 INSTRUCTION = (
     "Rewrite the user's message politely, in the same language as the message. "
     "Copy every token in square brackets exactly, character for character. "
     "Reply with the rewritten message only."
 )
-# Stops a hung server from blocking the run forever.
-REQUEST_TIMEOUT_SECONDS = 120
-
-
-def ask_model(url: str, model: str, seed: int, instruction: str, message: str) -> str:
-    body = json.dumps(
-        {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": instruction},
-                {"role": "user", "content": message},
-            ],
-            "stream": False,
-            "think": False,
-            "options": {"temperature": 0, "seed": seed},
-        }
-    ).encode()
-    request = urllib.request.Request(
-        f"{url}/api/chat", body, {"Content-Type": "application/json"}
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            raw_reply = response.read()
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode()
-        # Ollama answers 404 for an unknown URL too, so the body has to name the model.
-        if error.code == 404 and "model" in detail and "not found" in detail:
-            raise SystemExit(
-                f"Model {model} not found on {url}. Pull it: ollama pull {model}"
-            ) from error
-        raise SystemExit(
-            f"Ollama at {url} returned HTTP {error.code}: {detail}"
-        ) from error
-    except OSError as error:
-        # urlopen wraps a connect timeout in URLError but lets a read timeout through bare.
-        timed_out = isinstance(error, TimeoutError) or (
-            isinstance(error, urllib.error.URLError) and isinstance(error.reason, TimeoutError)
-        )
-        if timed_out:
-            raise SystemExit(
-                f"Ollama at {url} did not answer within {REQUEST_TIMEOUT_SECONDS} s"
-            ) from error
-        raise SystemExit(f"Cannot reach Ollama at {url}: {error}") from error
-
-    unexpected = f"Ollama at {url} sent an unexpected reply"
-    try:
-        content = json.loads(raw_reply)["message"]["content"]
-    except (ValueError, KeyError, TypeError) as error:
-        # Not repr(error): for a body that isn't UTF-8 it holds the whole body.
-        raise SystemExit(f"{unexpected} ({type(error).__name__}: {error})") from error
-    if not isinstance(content, str):
-        raise SystemExit(f"{unexpected} (content is not a string)")
-    return content
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--model", default="qwen3:4b-instruct")
     parser.add_argument("--count", type=int, default=100)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--model-dir", type=Path, help=MODEL_DIR_HELP)
     parser.add_argument("--url", default="http://localhost:11434")
     args = parser.parse_args()
-    records = load_records(DATA_FILE.parent, DATA_FILE.name, SYNTHETIC_TEST_COMMAND)
+    file_name, command = SYNTHETIC_TEST
+    records = load_records(args.data_dir, file_name, command)
 
     detect_names = None
     if args.model_dir:
@@ -107,9 +58,7 @@ def main() -> None:
 
         detect_names = load_tagger(args.model_dir)
 
-    if args.count > len(records):
-        raise SystemExit(f"--count {args.count} exceeds the {len(records)} records in {DATA_FILE}")
-    sample = random.Random(args.seed).sample(records, args.count)
+    sample = seeded_sample(records, args.count, args.seed, args.data_dir / file_name)
 
     sent: Counter[str] = Counter()
     unchanged: Counter[str] = Counter()

@@ -28,16 +28,24 @@ also get a table of every kind for the Greek ones and one for the English ones.
 """
 
 import argparse
-import random
 import time
 from collections.abc import Callable
 from pathlib import Path
 
+from ollama_chat import ask_model
 from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_analyzer.predefined_recognizers import PhoneRecognizer
-from records import MODEL_DIR_HELP, SAMPLE_SEED, SAMPLE_SIZE, load_records, require_model_dir
-from survival import ask_model
+from records import (
+    MODEL_DIR_HELP,
+    SAMPLE_SEED,
+    SAMPLE_SIZE,
+    SYNTHETIC_TEST,
+    WIKIANN_TEST,
+    fixed_sample,
+    load_records,
+    require_model_dir,
+)
 
 from greek_pii_redactor.rules import Span, find_ids
 
@@ -60,15 +68,8 @@ PRESIDIO_KINDS = {
     "PHONE_NUMBER": "PHONE",
 }
 
-# file name, kinds scored, command that creates the file
-DATASETS = [
-    (
-        "synthetic_test.jsonl",
-        ALL_KINDS,
-        "python eval/make_synthetic.py --seed 7 --split test --count 2000",
-    ),
-    ("wikiann_el_test.jsonl", ("PERSON",), "python eval/download_ner.py"),
-]
+# (file name, command that creates it), kinds scored
+DATASETS = [(SYNTHETIC_TEST, ALL_KINDS), (WIKIANN_TEST, ("PERSON",))]
 
 NAME_INSTRUCTION = (
     "List every person's name that appears in the user's text, copied exactly as it is written "
@@ -162,7 +163,7 @@ def sample_records(file_name: str, records: list[dict]) -> list[dict]:
     """Prints the dataset heading; files above SAMPLE_SIZE records are sampled down to it."""
     heading = f"{file_name}: {len(records)} sentences"
     if len(records) > SAMPLE_SIZE:
-        records = random.Random(SAMPLE_SEED).sample(records, SAMPLE_SIZE)
+        records = fixed_sample(records)
         heading = f"{file_name}: {SAMPLE_SIZE} sentences sampled with seed {SAMPLE_SEED}"
     print(f"\n{heading}")
     return records
@@ -216,7 +217,7 @@ def main() -> None:
 
     datasets = [
         (file_name, kinds, load_records(args.data_dir, file_name, command))
-        for file_name, kinds, command in DATASETS
+        for (file_name, command), kinds in DATASETS
     ]
     detectors = build_detectors(args.model_dir)
     llm_names_not_in_text = 0

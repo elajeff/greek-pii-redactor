@@ -11,16 +11,16 @@ records (for a learning curve) and --seed seeds Python's and torch's random gene
 records out, to score them with a model that never saw them. Each epoch's numbers go to
 epochs.json in --out.
 
-Setup: pip install -e ".[tagger]", then the data scripts named in eval/evaluate.py.
+Setup: pip install -e ".[tagger]". A missing data file prints the command that creates it.
 Run (the weights directory must be outside the repo, nothing from it is committed):
     python train/train_tagger.py --out C:/Users/me/greek-pii-redactor-weights/xlmr-person
 """
 
 import argparse
-import hashlib
 import json
 import math
 import random
+import sys
 from pathlib import Path
 
 import torch
@@ -44,25 +44,28 @@ from greek_pii_redactor.tagger import (
     tag_texts,
 )
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "eval"))
+from records import (
+    FOLDS,
+    SYNTHETIC_TRAIN,
+    WIKIANN_TRAIN,
+    WIKIANN_VALIDATION,
+    fold_of,
+    load_records,
+    person_spans,
+)
+
 BASE_MODEL = "FacebookAI/xlm-roberta-base"
 DEFAULT_SEED = 42
 IGNORE = -100  # label id that the loss skips (special tokens)
 BATCH_SIZE = 32  # fits in 12 GB at this length with bf16
 LEARNING_RATE = 2e-5  # a common starting value for fine-tuning an encoder like this
-# the linear schedule needs a fixed number of steps; patience can stop training before this
+# The linear schedule needs a fixed number of steps; patience can stop training before this.
 MAX_EPOCHS = 15
 PATIENCE = 2  # epochs without a validation F1 gain over the best so far before training stops
 WARMUP_FRACTION = 0.1  # the first tenth of the steps ramp the rate up, then it decays linearly
 MAX_GRAD_NORM = 1.0  # clips rare exploding gradients
 EVAL_BATCH_SIZE = 64  # no gradients are stored, so a larger batch than in training is fine
-
-FOLDS = 5  # a model trained on the other four fifths still sees 80% of the data
-FOLD_SEED = 0  # fixed, so a record lands in the same fold in every run
-HASH_BYTES = 8  # 64 bits of the hash, far more than the modulo needs
-
-WIKIANN_TRAIN_FILE = "wikiann_el_train.jsonl"
-SYNTHETIC_TRAIN_FILE = "synthetic_train.jsonl"
-VALIDATION_FILE = "wikiann_el_validation.jsonl"
 
 
 def fraction(text: str) -> float:
@@ -73,20 +76,6 @@ def fraction(text: str) -> float:
     if not 0 < share <= 1:
         raise argparse.ArgumentTypeError(f"{text} is outside (0, 1]")
     return share
-
-
-def fold_of(record: dict) -> int:
-    digest = hashlib.sha256(f"{FOLD_SEED}:{record['text']}".encode()).digest()
-    return int.from_bytes(digest[:HASH_BYTES]) % FOLDS
-
-
-def load_records(path: Path) -> list[dict]:
-    with path.open(encoding="utf-8") as file:
-        return [json.loads(line) for line in file]
-
-
-def person_spans(record: dict) -> set[Span]:
-    return {Span(*span) for span in record["spans"] if span[2] == "PERSON"}
 
 
 def label_tokens(offsets: list[tuple[int, int]], spans: set[Span]) -> list[int]:
@@ -206,11 +195,11 @@ def main() -> None:
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
-    train_files = [WIKIANN_TRAIN_FILE]
+    train_files = [WIKIANN_TRAIN]
     if not args.without_synthetic:
-        train_files.append(SYNTHETIC_TRAIN_FILE)
+        train_files.append(SYNTHETIC_TRAIN)
     train_records = [
-        record for name in train_files for record in load_records(args.data_dir / name)
+        record for data_file in train_files for record in load_records(args.data_dir, *data_file)
     ]
     if args.leave_out_fold is not None:
         train_records = [r for r in train_records if fold_of(r) != args.leave_out_fold]
@@ -219,7 +208,7 @@ def main() -> None:
             train_records, round(args.train_fraction * len(train_records))
         )
     print(f"{len(train_records)} training records")
-    validation_records = load_records(args.data_dir / VALIDATION_FILE)
+    validation_records = load_records(args.data_dir, *WIKIANN_VALIDATION)
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
     train_encoded = tokenize(tokenizer, train_records)
     print_unreproducible_share("train", train_records, train_encoded)
@@ -232,7 +221,7 @@ def main() -> None:
         BASE_MODEL, num_labels=len(LABELS), id2label=dict(enumerate(LABELS))
     ).to("cuda")
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
-    # Stopping early leaves the rate partly decayed, since the schedule runs to MAX_EPOCHS
+    # Stopping early leaves the rate partly decayed, since the schedule runs to MAX_EPOCHS.
     total_steps = MAX_EPOCHS * math.ceil(len(examples) / BATCH_SIZE)
     scheduler = get_linear_schedule_with_warmup(
         optimizer, int(WARMUP_FRACTION * total_steps), total_steps
@@ -250,7 +239,7 @@ def main() -> None:
         for first in range(0, len(examples), BATCH_SIZE):
             batch = make_batch(examples[first : first + BATCH_SIZE], tokenizer.pad_token_id)
             batch = {name: tensor.to("cuda") for name, tensor in batch.items()}
-            # bf16 is native on the RTX 5070, halves activation memory and needs no loss scaling
+            # bf16 is native on the RTX 5070, halves activation memory and needs no loss scaling.
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 loss = model(**batch).loss
             loss.backward()
@@ -281,7 +270,7 @@ def main() -> None:
                 "f1": f1,
             }
         )
-        # written every epoch so a crash keeps the epochs that ran
+        # Written every epoch so a crash keeps the epochs that ran.
         summary = {
             "seed": args.seed,
             "without_synthetic": args.without_synthetic,
