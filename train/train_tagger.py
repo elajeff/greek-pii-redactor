@@ -47,12 +47,10 @@ from greek_pii_redactor.tagger import (
 sys.path.insert(0, str(Path(__file__).parent.parent / "eval"))
 from records import (
     FOLDS,
-    SYNTHETIC_TRAIN,
-    WIKIANN_TRAIN,
     WIKIANN_VALIDATION,
-    fold_of,
     load_records,
     person_spans,
+    training_records,
 )
 
 BASE_MODEL = "FacebookAI/xlm-roberta-base"
@@ -195,18 +193,13 @@ def main() -> None:
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
-    train_files = [WIKIANN_TRAIN]
-    if not args.without_synthetic:
-        train_files.append(SYNTHETIC_TRAIN)
-    train_records = [
-        record for data_file in train_files for record in load_records(args.data_dir, *data_file)
-    ]
-    if args.leave_out_fold is not None:
-        train_records = [r for r in train_records if fold_of(r) != args.leave_out_fold]
-    if args.train_fraction < 1.0:
-        train_records = random.Random(args.seed).sample(
-            train_records, round(args.train_fraction * len(train_records))
-        )
+    train_records = training_records(
+        args.data_dir,
+        seed=args.seed,
+        without_synthetic=args.without_synthetic,
+        train_fraction=args.train_fraction,
+        leave_out_fold=args.leave_out_fold,
+    )
     print(f"{len(train_records)} training records")
     validation_records = load_records(args.data_dir, *WIKIANN_VALIDATION)
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)

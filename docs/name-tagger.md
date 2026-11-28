@@ -31,6 +31,6 @@ The weights stay outside the repo. The seed 1 tagger behind the numbers in this 
 
 The synthetic sentences don't change the WikiANN score and teach the tagger lowercase names and surnames on their own. The probes are edits of the generator's own sentences, so they likely favour the tagger trained on the generator's sentences.
 
-`eval/tagger_errors.py` also prints the errors split into wrong boundary, missed and extra, with examples, and recall on names seen and not seen in training. `eval/label_flags.py` lists WikiANN labels a trained tagger disagrees with, for checking by hand.
+`eval/tagger_errors.py` also prints the errors split into wrong boundary, missed and extra, with examples, and recall on names seen and not seen in each model's training data, and how many labelled names have characters the tagger did not cover. `eval/label_flags.py` lists WikiANN labels a trained tagger disagrees with, for checking by hand.
 
 `download_ner.py` drops WikiANN test sentences that also appear in its train or validation split. Many person names still appear in both, which is how WikiANN is built, so the WikiANN score is for names the model has partly seen.

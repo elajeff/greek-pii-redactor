@@ -47,6 +47,20 @@ def fold_of(record: dict) -> int:
     return int.from_bytes(digest[:HASH_BYTES]) % FOLDS
 
 
+def training_records(
+    data_dir: Path, *, seed: int, without_synthetic: bool, train_fraction: float,
+    leave_out_fold: int | None,
+) -> list[dict]:
+    records = load_records(data_dir, *WIKIANN_TRAIN)
+    if not without_synthetic:
+        records.extend(load_records(data_dir, *SYNTHETIC_TRAIN))
+    if leave_out_fold is not None:
+        records = [record for record in records if fold_of(record) != leave_out_fold]
+    if train_fraction < 1.0:
+        records = random.Random(seed).sample(records, round(train_fraction * len(records)))
+    return records
+
+
 def fixed_sample(records: list[dict]) -> list[dict]:
     """SAMPLE_SIZE records drawn with SAMPLE_SEED, so every script scores the same WikiANN test
     sentences."""
