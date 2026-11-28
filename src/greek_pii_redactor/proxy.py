@@ -26,6 +26,7 @@ command does): it would print the request path and query string, which can hold 
 import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from http.cookiejar import CookieJar, DefaultCookiePolicy
 
 import httpx
 from fastapi import FastAPI, Request
@@ -159,7 +160,11 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Made here, not at build time, so it belongs to the event loop the server runs on.
-        client = httpx.AsyncClient(transport=transport, timeout=UPSTREAM_TIMEOUT_SECONDS)
+        # Reuse provider connections without carrying a provider session between callers.
+        cookies = CookieJar(policy=DefaultCookiePolicy(allowed_domains=()))
+        client = httpx.AsyncClient(
+            transport=transport, timeout=UPSTREAM_TIMEOUT_SECONDS, cookies=cookies
+        )
         async with client:
             app.state.client = client
             yield
