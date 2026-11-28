@@ -21,7 +21,7 @@ from greek_pii_redactor.inflect import (
     strip_accents,
 )
 from greek_pii_redactor.names import Names
-from greek_pii_redactor.rules import Span, find_ids
+from greek_pii_redactor.rules import Span, find_ids, to_ascii
 
 KINDS = ("PERSON", "AFM", "AMKA", "IBAN", "PHONE", "EMAIL")
 PLACEHOLDER_PATTERN = re.compile(rf"\[({'|'.join(KINDS)})_\d+\]")
@@ -127,9 +127,14 @@ def same_person(first: str, second: str) -> bool:
 
 
 def id_key(kind: str, surface: str) -> str:
+    """The ID read the way find_ids reads it, so two spellings of one ID get the same key."""
     if kind == "EMAIL":
-        return surface.lower()
-    return surface.replace(" ", "").replace("-", "")
+        return to_ascii(surface).lower()
+    key = to_ascii(surface).replace(" ", "").replace("-", "")
+    if kind == "PHONE":
+        # +30 and 0030 are the only country codes PHONE_PATTERN takes.
+        return key.removeprefix("+30").removeprefix("0030")
+    return key
 
 
 def word_before(text: str, position: int) -> str:

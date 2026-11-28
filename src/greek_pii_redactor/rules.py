@@ -88,12 +88,17 @@ def iban_is_valid(iban: str) -> bool:
 VALIDATORS = {"AFM": afm_is_valid, "AMKA": amka_is_valid, "IBAN": iban_is_valid}
 
 
+def to_ascii(text: str) -> str:
+    """Digits of any script as 0-9 and fullwidth Latin letters as ASCII, one character for one."""
+    ascii_text = re.sub(r"\d", lambda digit: str(unicodedata.digit(digit.group())), text)
+    return ascii_text.translate(FULLWIDTH_TO_ASCII)
+
+
 def find_ids(text: str) -> list[Span]:
     accepted: list[Span] = []
     # The patterns match ASCII digits and letters; a 1-to-1 swap keeps spans on the original
     # text.
-    ascii_text = re.sub(r"\d", lambda digit: str(unicodedata.digit(digit.group())), text)
-    ascii_text = ascii_text.translate(FULLWIDTH_TO_ASCII)
+    ascii_text = to_ascii(text)
     # One flag per character, so checking a match costs its length, not the number of IDs found.
     claimed = bytearray(len(ascii_text))
     for kind, pattern in PATTERNS:

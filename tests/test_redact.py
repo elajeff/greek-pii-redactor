@@ -89,6 +89,11 @@ def test_forms_of_one_person_share_a_placeholder(names: tuple[str, ...], people:
         ),
         ("Call 691-234-5678 or 6912345678.", "Call [PHONE_1] or [PHONE_1]."),
         (
+            "Call 6912345678, +30 6912345678 or 0030 691 234 5678.",
+            "Call [PHONE_1], [PHONE_1] or [PHONE_1].",
+        ),
+        ("Tax ID 123456783 or １２３４５６７８３.", "Tax ID [AFM_1] or [AFM_1]."),
+        (
             "IBAN GR1601101250000000012300695, mail Nikos@Example.gr and nikos@example.gr.",
             "IBAN [IBAN_1], mail [EMAIL_1] and [EMAIL_1].",
         ),
