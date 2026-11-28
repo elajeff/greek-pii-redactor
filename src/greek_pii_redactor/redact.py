@@ -5,6 +5,7 @@ The known cases where restore gets the Greek wrong are in docs/restore.md.
 
 import re
 import unicodedata
+from bisect import bisect_right
 from collections.abc import Callable, Iterator
 from itertools import product
 from typing import NamedTuple
@@ -161,6 +162,35 @@ def read_context(word: str) -> Context | None:
     return None
 
 
+def names_outside_ids(text: str, names: list[Span], ids: list[Span]) -> list[Span]:
+    # IDs keep their own placeholder. The parts of a name outside them still need redaction.
+    uncovered = []
+    for name in names:
+        index = bisect_right(ids, name.start, key=lambda span: span.end)
+        if index == len(ids) or ids[index].start >= name.end:
+            uncovered.append(name)
+            continue
+
+        start = name.start
+        gaps = []
+        while index < len(ids) and ids[index].start < name.end:
+            identifier = ids[index]
+            if start < identifier.start:
+                gaps.append((start, identifier.start))
+            start = identifier.end
+            index += 1
+        if start < name.end:
+            gaps.append((start, name.end))
+
+        for start, end in gaps:
+            fragment = text[start:end]
+            if fragment.strip():
+                left = start + len(fragment) - len(fragment.lstrip())
+                right = start + len(fragment.rstrip())
+                uncovered.append(Span(left, right, "PERSON"))
+    return uncovered
+
+
 def redact(
     text: str,
     detect_names: Callable[[str], list[Span]] | None = None,
@@ -175,10 +205,8 @@ def redact(
         raise ValueError("text already contains a placeholder such as [PERSON_1]")
     ids = find_ids(text)
     detected = detect_names(text) if detect_names else []
-    # The rules are exact and the tagger is a guess, so a name span that overlaps an ID is dropped.
-    detected = [n for n in detected if not any(n.start < i.end and i.start < n.end for i in ids)]
-    # Overlapping name spans become one, so no tail of a name is left in the output.
-    names = merge_names(detected)
+    # Merge overlapping name spans before trimming so neither detection can expose a fragment.
+    names = names_outside_ids(text, merge_names(detected), ids)
 
     if placeholders is None:
         placeholders = {}

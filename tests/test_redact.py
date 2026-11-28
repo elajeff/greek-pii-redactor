@@ -114,16 +114,22 @@ def test_placeholders_are_shared_across_calls() -> None:
     assert list(placeholders) == ["[EMAIL_1]", "[EMAIL_2]"]
 
 
-def test_id_wins_over_overlapping_name_span() -> None:
-    text = "Καλέστε το 6912345678 σήμερα."
-    start = text.index("το")
-
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("Νίκος 6912345678", "[PERSON_1] [PHONE_1]"),
+        ("6912345678 Μαρία", "[PHONE_1] [PERSON_1]"),
+        ("Νίκος 6912345678 Μαρία", "[PERSON_1] [PHONE_1] [PERSON_2]"),
+        (" 6912345678 ", " [PHONE_1] "),
+    ],
+)
+def test_overlap_keeps_ids_and_hides_the_rest_of_the_name(text: str, expected: str) -> None:
     def detect(_: str) -> list[Span]:
-        return [Span(start, text.index("σήμερα") - 1, "PERSON")]
+        return [Span(0, len(text), "PERSON")]
 
     redacted, placeholders = redact(text, detect)
-    assert redacted == "Καλέστε το [PHONE_1] σήμερα."
-    assert list(placeholders) == ["[PHONE_1]"]
+    assert redacted == expected
+    assert restore(redacted, placeholders) == text
 
 
 @pytest.mark.parametrize(
