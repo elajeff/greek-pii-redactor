@@ -56,8 +56,9 @@ def load_names_dir(names_dir: Path | None) -> Names | None:
 
 def run_redact(args: argparse.Namespace) -> None:
     mapping_path = args.mapping or args.file.with_name(f"{args.file.name}.mapping.json")
+    mapping_exists = f"{mapping_path} already exists: it is not overwritten. Use --mapping."
     if mapping_path.exists():
-        raise SystemExit(f"{mapping_path} already exists: it is not overwritten. Use --mapping.")
+        raise SystemExit(mapping_exists)
     text = read_text(args.file)
     detect_names = load_name_detector(args.model_dir)
     try:
@@ -65,7 +66,11 @@ def run_redact(args: argparse.Namespace) -> None:
     except ValueError as error:
         raise SystemExit(f"{args.file}: {error}") from error
     mapping = json.dumps(placeholders, ensure_ascii=False, indent=2)
-    mapping_path.write_text(mapping, encoding="utf-8")
+    try:
+        with mapping_path.open("x", encoding="utf-8") as file:
+            file.write(mapping)
+    except FileExistsError as error:
+        raise SystemExit(mapping_exists) from error
     print(redacted, end="")
 
 
