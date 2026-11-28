@@ -193,6 +193,29 @@ def test_authorization_header_reaches_the_upstream() -> None:
     assert received[0]["authorization"] == "Bearer sk-test"
 
 
+def test_provider_cookies_are_not_shared_between_requests() -> None:
+    received = []
+
+    def reply(request: httpx.Request) -> httpx.Response:
+        received.append((request.headers.get("authorization"), request.headers.get("cookie")))
+        return httpx.Response(
+            200,
+            headers={"Set-Cookie": "session=provider-session; Path=/"},
+            json={"choices": [{"message": {"content": "hi"}}]},
+        )
+
+    with proxy_to(httpx.MockTransport(reply)) as proxy:
+        for key in ("first", "second"):
+            response = proxy.post(
+                "/v1/chat/completions",
+                json={"messages": USER_HI},
+                headers={"Authorization": f"Bearer {key}"},
+            )
+            assert response.status_code == 200
+
+    assert received == [("Bearer first", None), ("Bearer second", None)]
+
+
 @pytest.mark.parametrize("status", [429, 500])
 def test_upstream_errors_keep_their_status(status: int) -> None:
     upstream, _ = fake_upstream(status)
