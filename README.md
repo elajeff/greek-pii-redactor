@@ -6,7 +6,7 @@ Built with Python 3.13, PyTorch and Hugging Face Transformers (a fine-tuned XLM-
 
 ## How it compares
 
-I compared the name detection with Presidio (using its Greek spaCy model) and with a local LLM, qwen3:4b-instruct run through Ollama and asked to list the names in each sentence. All three only saw Greek text: 1515 Greek sentences from my synthetic test file, and 2000 sentences from the Greek part of WikiANN, which is real Wikipedia text. A hit only counts if the detector marks exactly the right span. A wrong hit is a span that isn't a labelled name.
+I compared the name detection with Presidio (using its Greek spaCy model) and with a local LLM, qwen3:4b-instruct run through Ollama and asked to list the names in each sentence. I scored all three on Greek text only: 1515 Greek sentences from my synthetic test file, and 2000 sentences from the Greek part of WikiANN, which is real Wikipedia text. A hit only counts if the detector marks exactly the right span. A wrong hit is a span that isn't a labelled name.
 
 | | Names found, synthetic (of 1515) | Names found, WikiANN (of 894) | Wrong hits, WikiANN | Time for 2000 WikiANN sentences |
 | --- | --- | --- | --- | --- |
