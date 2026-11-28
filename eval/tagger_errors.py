@@ -27,20 +27,17 @@ from records import (
     SAMPLE_SEED,
     SAMPLE_SIZE,
     SYNTHETIC_TEST,
-    SYNTHETIC_TRAIN,
     WIKIANN_TEST,
-    WIKIANN_TRAIN,
-    WIKIANN_VALIDATION,
     fixed_sample,
     load_records,
     require_epochs_file,
+    training_records,
 )
 
 from greek_pii_redactor.inflect import accents_by_plain_form, strip_accents
 from greek_pii_redactor.rules import Span
 from greek_pii_redactor.tagger import load_tagger
 
-TRAIN_FILES = (WIKIANN_TRAIN, WIKIANN_VALIDATION, SYNTHETIC_TRAIN)
 EXAMPLE_COUNT = 10  # enough to see the pattern in an error bucket without filling the screen
 ARTICLES = ("ο", "η", "του", "της", "τον", "την")
 GREEK_LETTER = re.compile("[Ά-ώ]")
@@ -117,7 +114,8 @@ def f1_score(true_pos: int, false_pos: int, false_neg: int) -> float:
 
 
 def recall_line(label: str, hits: list[bool]) -> str:
-    return f"{label:<30}{sum(hits):>5} of {len(hits):<5}recall {sum(hits) / len(hits):.3f}"
+    recall = f"{sum(hits) / len(hits):.3f}" if hits else "n/a"
+    return f"{label:<30}{sum(hits):>5} of {len(hits):<5}recall {recall}"
 
 
 def known_greek_words(data_dir: Path) -> set[str]:
@@ -133,11 +131,10 @@ def known_greek_words(data_dir: Path) -> set[str]:
     return known
 
 
-def seen_names(data_dir: Path) -> set[str]:
+def seen_names(records: list[dict]) -> set[str]:
     return {
         record["text"][start:end].casefold()
-        for file_name, command in TRAIN_FILES
-        for record in load_records(data_dir, file_name, command)
+        for record in records
         for start, end in person_pairs(record)
     }
 
@@ -181,13 +178,16 @@ def print_errors(
     false_pos: int,
     false_neg: int,
 ) -> None:
-    overlapping = 0
+    overlapping = uncovered = 0
     wrong_boundary: list[tuple[str, str]] = []
     missed: list[str] = []
     extra: list[str] = []
     for record, expected, got in zip(sample, gold, found, strict=True):
         text = record["text"]
+        covered = {offset for start, end in got for offset in range(start, end)}
         for start, end in sorted(expected - got):
+            if not covered.issuperset(range(start, end)):
+                uncovered += 1
             touching = [p for p in sorted(got) if p[0] < end and start < p[1]]
             if touching:
                 wrong_boundary.append((text[start:end], " | ".join(text[a:b] for a, b in touching)))
@@ -207,6 +207,7 @@ def print_errors(
         f"predicted {true_pos + false_pos} = {true_pos} + {len(extra)} + {overlapping} "
         "overlapping a gold span"
     )
+    print(f"  {uncovered} of {true_pos + false_neg} labelled names have uncovered characters")
     print("  wrong boundary (gold -> predicted):")
     for gold_text, predicted_text in wrong_boundary[:EXAMPLE_COUNT]:
         print(f"    {gold_text!r} -> {predicted_text!r}")
@@ -267,7 +268,6 @@ def main() -> None:
     sample = fixed_sample(load_records(args.data_dir, *WIKIANN_TEST))
     gold = [person_pairs(record) for record in sample]
     probe_records = load_records(args.data_dir, *SYNTHETIC_TEST)
-    seen = seen_names(args.data_dir)
     known = known_greek_words(args.data_dir)
 
     f1_per_dir: list[float] = []
@@ -281,6 +281,14 @@ def main() -> None:
             f"{setup['train_records']} train records, "
             f"without synthetic {setup['without_synthetic']}"
         )
+        train = training_records(
+            args.data_dir,
+            seed=setup["seed"],
+            without_synthetic=setup["without_synthetic"],
+            train_fraction=setup["train_fraction"],
+            leave_out_fold=setup.get("leave_out_fold"),
+        )
+        seen = seen_names(train)
         tag = load_tagger(model_dir)
 
         found = [{(s.start, s.end) for s in tag(record["text"])} for record in sample]
