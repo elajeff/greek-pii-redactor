@@ -194,9 +194,10 @@ def corrected(name: dict) -> dict:
 
 
 def read_names(path: Path) -> Iterator[dict]:
-    """The lines of a names file, as written by eval/download_names.py, one at a time, with the
-    hand-checked forms applied, then the MANUAL_NAMES the file has no line for, so training, the
-    lexicon and the eval all use them."""
+    """The lines of a names file (from eval/download_names.py, or the lexicon.jsonl and
+    holdout.jsonl that train/train_inflection.py writes in the same format), one at a time, with
+    the hand-checked forms applied, then the MANUAL_NAMES the file has no line for, so training,
+    the lexicon and the eval all use them."""
     count = 0
     keys = set()
     with path.open(encoding="utf-8") as file:
