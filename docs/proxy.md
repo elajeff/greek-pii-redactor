@@ -18,7 +18,7 @@ What it refuses with a 400, without forwarding anything:
 - message keys other than `role` and `content`, a role other than `system`, `developer`, `user` and `assistant`, a `content` that is null, and parts other than `{"type": "text", "text": ...}`
 - a message that already contains a placeholder
 
-Message text and `stop` strings are redacted. `model` is sent as it is.
+Message text and `stop` strings are redacted. Text parts in the same message are joined without a separator and sent as one text part so names and IDs split between parts can be found. `model` is sent as it is.
 
 If the upstream can't be reached it answers 502 with only the error type. Requests are redacted one at a time. `eval/latency.py` measures the time the proxy adds per request against an in-process fake upstream.
 

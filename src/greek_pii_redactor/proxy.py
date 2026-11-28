@@ -104,7 +104,7 @@ def redact_message(message: dict, redact_text: Callable[[object], str]) -> dict:
     content = message.get("content")
     if not isinstance(content, list):
         return {**message, "content": redact_text(content)}
-    parts = []
+    texts = []
     for part in content:
         if not isinstance(part, dict) or part.get("type") != "text":
             raise ValueError("only text content parts are supported")
@@ -112,7 +112,12 @@ def redact_message(message: dict, redact_text: Callable[[object], str]) -> dict:
             raise ValueError(
                 f"content part key '{unsupported[0]}' is not supported: it is not redacted"
             )
-        parts.append({**part, "text": redact_text(part.get("text"))})
+        text = part.get("text")
+        if not isinstance(text, str):
+            raise ValueError("text must be a string")
+        texts.append(text)
+    # A name or email can span adjacent parts of the same message.
+    parts = [{"type": "text", "text": redact_text("".join(texts))}] if texts else []
     return {**message, "content": parts}
 
 

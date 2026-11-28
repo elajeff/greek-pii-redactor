@@ -92,6 +92,25 @@ def test_messages_of_one_request_share_placeholders() -> None:
     assert sent[2]["content"] == "Again [EMAIL_1]"
 
 
+def test_redacts_names_and_ids_split_across_text_parts() -> None:
+    upstream, received = fake_upstream()
+    parts = [
+        {"type": "text", "text": "Ο Νίκος "},
+        {"type": "text", "text": "Παπαδόπουλος, email nikos@"},
+        {"type": "text", "text": "example.gr."},
+    ]
+    with proxy_to(httpx.ASGITransport(app=upstream)) as proxy:
+        response = proxy.post(
+            "/v1/chat/completions", json={"messages": [{"role": "user", "content": parts}]}
+        )
+    assert response.status_code == 200
+    assert received[0]["body"]["messages"] == [
+        {"role": "user", "content": [{"type": "text", "text": "Ο [PERSON_1], email [EMAIL_1]."}]}
+    ]
+    reply = response.json()["choices"][0]["message"]["content"]
+    assert f"Ο {NAME}, email {EMAIL}." in reply
+
+
 def test_unreachable_upstream_gives_502_without_the_request_text() -> None:
     def refuse(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused")
